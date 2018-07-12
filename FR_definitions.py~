@@ -1,0 +1,280 @@
+import matplotlib.pyplot as plt 
+import numpy as np
+from astropy.io import ascii
+import math
+
+    def _beam_profile_fkt(x, y, x_o ,y_0, c):
+        """Function defining the beam profile.
+        
+        Args:
+          x (float) : x coordinate.
+          y (float) : y coordinate.
+          x_o (float): beam center (x coordinate).
+          y_0 (float): beam center (y coordinate).
+          c (float):  scaling parameter.
+        
+        Returns:
+            float: The function value at (x,y).
+        """
+        
+        # I have simplified the expresion a bit, but it should be
+        # still same as in the previous script. 
+        return np.exp((-2/c**2 * ((x - x_0)**2 +  (y - y_o)**2))
+
+
+class Target:
+    """ Holds information about target and its placing.
+    
+    Attributes:
+    
+      x_s (int): targets start coordinate in x direction.
+      x_e (int): targets end coordinate in x direction.
+      y_s (int): targets start coordinate in y direction.
+      y_e (int): targets end coordinate in y direction.
+      trans (float): sample transmission. 
+    
+    --
+    
+    """
+    
+    def __init__(self, x_s, x_e, y_s, y_e, trans):
+        """Initiates Target object
+        
+        takes arguments identicaly named as class atributes and sets
+        them to the correspondingly. 
+        """
+        self.x_s = x_s
+        self.x_e = x_e
+        self.y_s = y_s
+        self.y_e = y_e
+        self.trans = trans
+
+
+class Simulation:
+    """Keeps simulation parameters and data
+    
+    Attributes:
+      target (Target): Target configuration.
+      grid_size (tuple) : shape of the grid as a tuple of two integers.
+      cellsize_x: Cellsize in x direction.
+          Target length over grid size (bouth in x direction).
+      cellsize_y: Cellsize in xy direction.
+          Target length over grid size (bouth in y direction).
+      timestep (int): Number of timesteps in the simulation.
+      energy (float): Photon energy in keV of processed simulation file.
+      data (ndarray): Simulation data. Can be loaded from a file with
+          the Simulation.load_data method.
+     
+    """
+    def __init__(self, m, n, target, timestep, energy):
+        """Initiates an Simulation object, sets attributes.
+        
+        Args:
+          m (int): grid size in x direction.
+          n (int): grid size in y direction.
+          target (Target), timestep, obs_energy: see attributes section
+              in the class docstring. 
+        """
+        # set some attributes:
+        self.target = target
+        self.grid_size = (m, n) 
+        self.timestep = timestep
+        self.energy = energy
+        
+        ## self.x_axis = np.linspace(self.target.x_s, self.target.x_e,
+        ##                          self.grid_size[0])
+        ## self.y_axis = np.linspace(self.target.y_s, self.target.y_e,
+        ##                          self.grid_size[1]) 
+        
+        #calculate cellsizes:
+        self.cellsize_x = (target.x_e - target.x_s)/self.grid_size[0]
+        self.cellsize_y = (target.y_e - target.y_s)/self.grid_size[1]
+        
+
+        
+        # create an empty array for the simulation data:
+        self.data = np.empty(self.grid_size)
+    
+    def load_data(self, path):
+        """ Loads rotation data from a simulation data file
+        
+        Args:
+          path (string):  The path to the data file.
+        """
+        ##self.data = ascii.read()
+        ## full_path = path  + 'Rotation' + str(self.timestep) + '.dat'
+        with open(path) as rot_file
+            self.data = np.genfromtxt(rot_file) 
+        return data
+        
+
+class Configuration:
+    """Contains information about the optical setup of the experiment.
+    
+    Attributes:
+      an_position (float): Rotation in radian) of the analyser from its default
+          position (at pi/2 to the primary beam polarisation). 
+      impurity (float): Beam polarisation impurity. Part of the intensity
+       remaining in the other polarization. 
+      an_extinction (float): Extinction of the analyser. 
+      
+      det_obs_energy (float): Observation energy in keV.
+      det_trans_channel : Transmission of all channelcuts including spectral
+         bandwidth # max trans*BW_cc/BW_lcls, asymm. 
+      det_pixel_size (float): Pixel size in micron.
+      det_beam_width (float): beam width after lens B in micron.
+          # what's lens B? 
+      m (float): magnification # ???
+      n_0: source number of photons in total.
+      trans_telescope (float): Transmission of CRLs due to beam size
+          mismatch (asymmetry).
+      ph_per_px_on_axis : Photons per pixel on axis only with lenses.
+     """
+    def __init__(self, an_position, impurity,
+                 an_extinction, det_obs_energy, det_trans_channel,
+                 det_pixel_size, det_beam_width, n_0, m, trans_telescope):
+        """Initiates an Configuration object, sets attributes.
+        
+        Args: an_position, impurity, an_extinction, det_obs_energy,
+          det_trans_channel, det_pixel_size, det_beam_width, n_0, m,
+          trans_telescope:
+              see attributes section in the class docstring. 
+        """
+        self.an_position = an_position
+        self.impurity = impurity
+        self.an_extinction = an_extinction
+        
+        self.det_obs_energy = det_obs_energy
+        self.det_trans_channel = det_trans_channel
+        self.det_pixel_size = det_pixel_size
+        self.det_beam_width = det_beam_width
+        
+        self.m = m # what is it? magnification?
+        self.n_0 = n_0
+        self.trans_telescope = trans_telescope
+        
+        # Attributes set to None at first:
+        self.ph_per_px_on_axis = None
+
+    def calc_ph_per_px_on_axis(self, a = 1.6e7, b = 1e11 , c = 13):
+        self.ph_per_px_on_axis = (a * self.n_0 / b
+                                  * self.detector.pixel_size**2 / c**2)
+        return self.ph_per_px_on_axis
+                                         
+class Detection:
+    """Used to compute the detected signal.
+    
+    
+    Attributes:
+    cfg (Configuration): optical configuration of the experiment.
+    sim (Simulation): Simulation class object, containing
+        simulation data and its parameters.
+    rotation (ndarray): Simulated rotation, scaled to the observation energy.
+    det_shape (tuple): Detector size as tuple (pixels in x, pixels in y).
+    intensity_px (ndarray): intensity profile, on the detector pixels,
+        generated by passing through the analyser. Beam profile not included.
+    beam_profile (ndarray): Itensity profile of the beam (without the analyser).
+    ideal_detector (ndarray): Signal on the detecor, without noise.
+    
+     """
+     
+    def __init__(self, configuration, simulation):
+        """Initiates an Detection object, sets attributes.
+        
+        Args:
+          configuration: as 'cfg' in the class docstring.
+          simulation:  as 'sim' in the class docstring.
+        """
+        self.cfg = configuration
+        self.sim = simulation
+        
+        # Attributes set to None at first:
+        self.rotation = None
+        self.det_shape = None
+        self.intensity_px = None
+        self.beam_profile = None
+        self.ideal_detector = None
+        
+    def calc_rotation(self):
+        """Calculates rotation from the simulation data.
+        
+        Converts the simulated rotation to the observation energy by
+        scalling it with an (sim_energy/obs_energy)^2 factor. Sets 
+        the rotation attribute.
+        """
+        
+        self.rotation = (self.sim.data * self.sim.energy**2
+                                / self.cgf.det_obs_energy**2)
+                                
+    def calc_det_shape(self):
+        """ Calculates detecor shape, sets the 'det_shape' attribute."""
+        spatial_resolution = self.cfg.det_pixel_size / self.cgf.m
+        
+        # why +1 ?
+        px_x = math.ceil(((self.sim.target.x_e - self.sim.target.x_s)
+                          /self.cfg.spatial_resolution) + 1)
+        px_y = math.ceil(((self.sim.target.y_e - self.sim.target.y_s)
+                          /self.cfg.spatial_resolution) + 1)
+                          
+        self.det_shape = (px_y, px_x) 
+        
+    def emulate_intensity(self):
+        """Emulates influence of the analyser on the intensity.
+        
+        It calculates the proportion of the intesity left after passing
+        through the analyser for every cell and transfers it to detector pixels.
+        Bilinear interpolation is used for the rescaling. 
+        
+        Sets the outcome to the 'intensity_px' attribute.
+         """
+        # angle between the direction of the rotated polarisation
+        # and the analysator position.
+        # Left the '+'. After redefining angles should be a '-'.
+        theta = (self.rotation + self.cfg.an_position)/1000
+         
+        # mrad -> rad => 1/1000 faktor
+        #for the light with the main polarisation:
+        intensity_1 = ((1 - self.cfg.impurity) *
+                       (1 -  (1 - self.cfg.an_extinction)
+                        * np.cos(theta)**2))
+        #for the light with the other polarisation:
+        intensity_2 = (self.cfg.impurity
+                       * (1 -  (1 - self.cfg.an_extinction)
+                       * np.sin(theta)**2))
+        intensity = intensity_1 + intensity_2
+        
+        # Transforming the values to pixels. 
+        # Rescaled with a bilinear interpolation (default for skimage).
+        intensity = skimage.transform.resize(intensity, self.det_shape,
+                                # anti_aliasing = False, 
+                                # default is True, it propably should be on.
+                                # preserve_range = True, 
+                                # default is False, not sure about it.
+                                )
+        self.intensity_px = intensity
+        
+    def calc_beam_profile(self):
+        """Calculates a beam profile. Sets it to the 'beam_profile' attr."""
+        
+        x = np.arange(1, self.det_shape[0] + 1)
+        y = np.arange(1, self.det_shape[1] + 1)
+        # c - scaling parameter ~ (standart deviation)^2
+        c = self.cfg.det_pixel_size/ self.cfg.det_beam_width
+        
+        # x[:, None], y [None, :] adds a second empty dimension.
+        # Faster than np.meshgrid; non mixed expressions like x^2
+        # are still calculated in 1D.
+        beam_profile = _beam_profile_fkt(x[:, None], y [None, :],
+                                        self.det_shape[0]/2,
+                                         self.det_shape[1]/2, c)
+        # scalling with transmission values:                 
+        beam_profile = (self.sim.target.trans * self.cfg.det_trans_channel
+                             * self.cfg.trans_telescope * beam_profile)
+                             
+        self.beam_profile = beam_profile
+        
+        
+        
+        
+        
+        
