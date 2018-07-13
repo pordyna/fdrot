@@ -76,7 +76,7 @@ class Simulation:
           the Simulation.load_data method.
 
     """
-    def __init__(self, m, n, target, timestep, energy):
+    def __init__(self, target, m, n, timestep, energy):
         """Initiates an Simulation object, sets attributes.
 
         Args:
@@ -318,11 +318,9 @@ class Detection:
         # No noise is added for accumulation = 0
         # Choosing the image for adding noise:
         if image is None:
-            print('A')
             without_noise = self.ideal_detector
             # TODO Add sth for a situation, when image is not an ndarray.
         else:
-            print('B')
             without_noise = image
 
         if accumulation == 0:
