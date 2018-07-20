@@ -363,12 +363,17 @@ class Detection:
         # Theta is an angle between the default analyzer position
         # (full extinction - pi/2) and the main polarization direction.
 
-        calc_var = ((1-intensity - self.cfg.impurity
-                     + self.cfg.an_extinction) /
-                    (1-self.cfg.an_extinction)*(1 - 2*self.cfg.impurity))
+        beta = self.cfg.an_extinction
+        alpha = self.cfg.impurity
+        cos_2theta = ((intensity - 0.5 * (1 + beta)) /
+                      ((beta - 1) * (0.5 - alpha)))
+
         # get theta:
-        # theta is definitely in (-pi/2, pi/2) => cos(theta) > 0 .
-        theta = np.arccos(np.sqrt(calc_var))
+        # As long as the analyzer position angle (def. in same direction as rot)
+        # is smaller than the smallest rotation, theta is greater then zero.
+        # That means that there is no sign ambiguity when obtaining theta with
+        # arccos.
+        theta = 0.5 * np.arccos(cos_2theta)
         # Calculate rotation:
         # TODO analyzer position +- correct definition -> sign in eq. changes.
         # Factor 1000 is for the rad -> mrad conversion.
