@@ -70,13 +70,12 @@ class Simulation:
           Target length over grid size (both in x direction).
       cellsize_y: Cell size in y direction.
           Target length over grid size (both in y direction).
-      timestep (int): Number of time steps in the simulation.
       energy (float): Photon energy in keV of processed simulation file.
       data (ndarray): Simulation data. Can be loaded from a file with
           the Simulation.load_data method.
 
     """
-    def __init__(self, target, m, n, timestep, energy):
+    def __init__(self, target, m, n, energy):
         """Initiates an Simulation object, sets attributes.
 
         Args:
@@ -89,7 +88,6 @@ class Simulation:
         # set some attributes:
         self.target = target
         self.grid_size = (m, n)
-        self.timestep = timestep
         self.energy = energy
 
         # calculate cell sizes:
@@ -245,8 +243,8 @@ class Detection:
 
         # angle between the direction of the rotated polarization
         # and the analyst position.
-        # Left the '+'. After redefining angles should be a '-'.
-        theta = (self.rotation + self.cfg.an_position)/1000
+        # (changed) Left the '+'. After redefining angles should be a '-'.
+        theta = (self.rotation - self.cfg.an_position)/1000
 
         # mrad -> rad => 1/1000 factor
         # for the light with the main polarization:
@@ -375,9 +373,9 @@ class Detection:
         # arccos.
         theta = 0.5 * np.arccos(cos_2theta)
         # Calculate rotation:
-        # TODO analyzer position +- correct definition -> sign in eq. changes.
+        # (changed) analyzer position +- correct definition -> sign in eq. changes.
         # Factor 1000 is for the rad -> mrad conversion.
-        rotation = theta*1000 - self.cfg.an_position
+        rotation = theta*1000 + self.cfg.an_position
         # It's on pixels. Would an interpolation back to the cells make
         # any sens?
         return rotation
