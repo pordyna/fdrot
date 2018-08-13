@@ -51,7 +51,7 @@ class Target:
         """Initiates Target object
 
         takes arguments identically named as class attributes and sets
-        them to the correspondingly.
+        them correspondingly.
         """
         self.x_s = x_s
         self.x_e = x_e
@@ -61,7 +61,7 @@ class Target:
 
 
 class Simulation:
-    """Keeps simulation parameters and data
+    """Keeps simulation parameters and data.
 
     Attributes:
       target (Target): Target configuration.
@@ -234,8 +234,8 @@ class Detection:
     def emulate_intensity(self):
         """Emulates influence of the analyzer on the intensity.
 
-        It calculates the proportion of the intensity left after passing
-        through the analyzer for every cell and transfers it to detector pixels.
+        It calculates the proportion of the intensity, left after passing
+        through the analyzer, for every cell and transfers it to detector pixels.
         Bilinear interpolation is used for the rescaling.
 
         Sets the outcome to the 'intensity_px' attribute.
