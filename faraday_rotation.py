@@ -37,27 +37,18 @@ def _beam_profile_fkt(x, y, x_0, y_0, c):
 
 
 class Target:
-    """ Holds information about target and its placing.
+    """ Holds information about target.
 
     Attributes:
-
-      x_s (int): targets start coordinate in x direction.
-      x_e (int): targets end coordinate in x direction.
-      y_s (int): targets start coordinate in y direction.
-      y_e (int): targets end coordinate in y direction.
       trans (float): sample transmission.
     """
 
-    def __init__(self, x_s, x_e, y_s, y_e, trans):
+    def __init__(self, trans):
         """Initiates Target object
 
         takes arguments identically named as class attributes and sets
         them correspondingly.
         """
-        self.x_s = x_s
-        self.x_e = x_e
-        self.y_s = y_s
-        self.y_e = y_e
         self.trans = trans
 
 
@@ -66,7 +57,13 @@ class Simulation:
 
     Attributes:
       target (Target): Target configuration.
+
+      x_s (int): targets start coordinate in x direction.
+      x_e (int): targets end coordinate in x direction.
+      y_s (int): targets start coordinate in y direction.
+      y_e (int): targets end coordinate in y direction.
       grid_size (tuple) : shape of the grid as a tuple of two integers.
+
       cellsize_x: Cell size in x direction.
           Target length over grid size (both in x direction).
       cellsize_y: Cell size in y direction.
@@ -76,7 +73,7 @@ class Simulation:
           the Simulation.load_data method.
 
     """
-    def __init__(self, target, m, n, energy):
+    def __init__(self, target, ta_x_s, ta_x_e, ta_y_s, ta_y_e, m, n, energy):
         """Initiates an Simulation object, sets attributes.
 
         Args:
@@ -90,10 +87,15 @@ class Simulation:
         self.target = target
         self.grid_size = (m, n)
         self.energy = energy
+        # set target dimensions.
+        self.ta_x_s = ta_x_s
+        self.ta_x_e = ta_x_e
+        self.ta_y_s = ta_y_s
+        self.ta_y_e = ta_y_e
 
         # calculate cell sizes:
-        self.cellsize_x = (target.x_e - target.x_s)/self.grid_size[0]
-        self.cellsize_y = (target.y_e - target.y_s)/self.grid_size[1]
+        self.cellsize_x = (ta_x_e - ta_x_s)/self.grid_size[0]
+        self.cellsize_y = (ta_y_e - ta_y_s)/self.grid_size[1]
 
         # create an empty array for the simulation data:
         self.data = np.empty(self.grid_size)
@@ -125,46 +127,41 @@ class Configuration:
       det_trans_channel : Transmission of all channel cuts including spectral
          bandwidth # max trans*BW_cc/BW_lcls, asymm.
       det_pixel_size (float): Pixel size in micron.
-      det_beam_width (float): beam width at the detector in micron.
-
+      det_beam_width (optional, float): beam width at the detector in micron.
+          It has to be set, if the beam distribution was not specified and
+          the default gauss profile is in use.
       m (float): magnification # ???
       n_0: source number of photons in total.
       trans_telescope (float): Transmission of CRLs due to beam size
           mismatch (asymmetry).
 
       beam_distribution (function): Function used for calculating the
-              beam_profile. It should take as the first 4 positional
+              beam_profile. It should take as the first 2 positional
               arguments: x, y, x_0, y_0; x_0 and y_0 are the coordinates of
               the beam center. It should work with x,y as numpy arrays
               (1D +1(empty dim.)).
               It should return the distribution value at (x,y), or an array
               of values if x,y are arrays.
+              If not specified  a gaussian profile is used. The number of photons
+              at the axis (per pixel) and the beam width has to be specified.
       beam_position (tuple) : Position of the beam on the probe and detector;
           both values should be between  0 and 1. Set (0.5, 0.5) for a centered
           beam.
-
+      ph_per_px_on_axis : Photons per pixel on axis only with lenses
      """
 
     def __init__(self, an_position, impurity,
                  an_extinction, det_obs_energy, det_trans_channel,
-                 det_pixel_size, det_beam_width, n_0, m, trans_telescope,
+                 det_pixel_size, n_0, m, trans_telescope, det_beam_width =None,
                  beam_distribution=None, beam_position=None):
         """Initiates an Configuration object, sets attributes.
 
         Args: an_position, impurity, an_extinction, det_obs_energy,
-          det_trans_channel, det_pixel_size, det_beam_width, n_0, m,
-          trans_telescope:
+          det_trans_channel, det_pixel_size, n_0, m,
+          trans_telescope.det_beam_width (optional),
+          beam_distribution (optional)
+          beam_position (optional):
           see attributes section in the class doc string.
-        Kwargs:
-          beam_distribution (function): Function used for calculating the
-              beam_profile. It should take as the first 4 positional
-              arguments: x, y, x_0, y_0; x_0 and y_0 are the coordinates of
-              the beam center. It should work with x,y as 2D numpy arrays.
-              It should return the distribution value at (x,y), or an array
-              of values if x,y are arrays.
-          beam_position (tuple, default: (0.5, 0.5)): Position of the beam
-              on the probe and detector; both values should be between  0 and 1.
-              Set (0.5, 0.5) for a centered beam.
         """
 
         self.an_position = an_position
@@ -181,12 +178,41 @@ class Configuration:
         else:
             self.beam_position = beam_position
         if beam_distribution is None:
-            self.beam_distribution =
-        self.beam_distribution = beam_distribution
+            if det_beam_width is None:
+                raise Exception('det_beam_width has to be set,'
+                                ' when the beam_distribution is not given!')
+            self.beam_distribution = _beam_profile_fkt
+        else:
+            self.beam_distribution = beam_distribution
         self.m = m  #  rename to magnification !
         self.n_0 = n_0
         self.trans_telescope = trans_telescope
 
+        # Attributes set to None at first:
+        self.ph_per_px_on_axis = None
+
+
+    def calc_ph_per_px_on_axis(self, a=1.6e7, b=1e11, c=13):
+            """Rescales number of photons on axis per pixel for a new setup.
+
+            When the distribution of the initial photons, after passing through
+            the optical instruments, is not known, a gaussian beam with a specified
+            number of photons per pixel at the beam center can be used. This number
+            has to be calculated externally. This method allows simple rescaling to
+            the new initial intensity and a different pixel size.
+
+            Args:
+                a (optional, default = 1.6e7): Calculation outcome (number
+                    of photons per pixel on axis).
+                b (optional, default = 1e11): Initial number of photons of the
+                    initial calculation.
+                c (optional, default = 13): Pixel size (side length) of the initial
+                    calculation.
+            """
+
+            self.ph_per_px_on_axis = (a * self.n_0 / b
+                                      * self.det_pixel_size**2 / c**2)
+            return self.ph_per_px_on_axis
 
 
 
@@ -205,7 +231,6 @@ class Detection:
         generated by passing through the analyzer. Beam profile not included.
     beam_profile (ndarray): Beam intensity profile (without the analyzer).
     ideal_detector (ndarray): Signal on the detector, without noise.
-    ph_per_px_on_axis : Photons per pixel on axis only with lenses
     """
 
     def __init__(self, configuration, simulation):
@@ -224,7 +249,6 @@ class Detection:
         self.intensity_px = None
         self.beam_profile = None
         self.ideal_detector = None
-        self.ph_per_px_on_axis = None
 
     def calc_rotation(self):
         """Calculates rotation from the simulation data.
@@ -242,15 +266,15 @@ class Detection:
         spatial_resolution = self.cfg.det_pixel_size / self.cfg.m
 
         # why +1 ?
-        px_x = math.ceil(((self.sim.target.x_e - self.sim.target.x_s)
+        px_x = math.ceil(((self.sim.ta_x_e - self.sim.ta_x_s)
                           / spatial_resolution) + 1)
-        px_y = math.ceil(((self.sim.target.y_e - self.sim.target.y_s)
+        px_y = math.ceil(((self.sim.ta_y_e - self.sim.ta_y_s)
                           / spatial_resolution) + 1)
 
         self.det_shape = (px_y, px_x)
 
 
-    def emulate_intensity(self):
+    def emulate_intensity(self, order=1):
         """Emulates influence of the analyzer on the intensity.
 
         It calculates the proportion of the intensity, left after passing
@@ -279,6 +303,8 @@ class Detection:
         # Transforming the values to pixels.
         # Rescaled with a bilinear interpolation (default for skimage).
         intensity = transform.resize(intensity, self.det_shape,
+                                     order=order,
+                                     mode='reflect',
                                      anti_aliasing=False,
                                      # default is True, it probably
                                      # should be on.
@@ -293,8 +319,8 @@ class Detection:
         if position is not None:
             self.cfg.beam_position = position
         # values should be calculated for a pixel center:
-        x = np.arange(0, self.det_shape[0]) + 0.5
-        y = np.arange(0, self.det_shape[1]) + 0.5
+        x = np.arange(0, self.det_shape[0])   + 0.5
+        y = np.arange(0, self.det_shape[1])   + 0.5
 
 
 
@@ -307,7 +333,14 @@ class Detection:
         if self.cfg.beam_distribution == _beam_profile_fkt:
             # c - scaling parameter ~ (standard deviation)^2
             c = self.cfg.det_beam_width / self.cfg.det_pixel_size
-            args = (c)
+            args = (c,)
+        # This default distribution is not normalized. It's equal to 1
+        # at the beam center. Photons per pixel on axis are used as
+        # the scaling parameter. (It has to be calculated separately,
+        # for a given CLR system).
+            scaling = self.cfg.ph_per_px_on_axis
+        else:
+            scaling = self.cfg.n_0
 
         # x[:, None], y [None, :] adds a second empty dimension.
         # Faster than np.meshgrid; non mixed expressions like x^2
@@ -315,71 +348,14 @@ class Detection:
         beam_profile = self.cfg.beam_distribution(x[:, None], y[None, :],
                                                   x_0, y_0, *args, **kwargs)
         # scaling with transmission values:
-        beam_profile = (self.cfg.ph_per_px_on_axis * self.sim.target.trans
+        beam_profile = (scaling * self.sim.target.trans
                         * self.cfg.det_trans_channel * self.cfg.trans_telescope
                         * beam_profile)
 
         self.beam_profile = beam_profile
 
-##### Do we need it? #####
-
-    def new_calc_ph_per_px_on_axis(self):
-        """Calculates number of photons per pixel on axis only with lenses.
-
-        Function: a * n_0 *(1/b) * pixel_size^2/c^2.
-        Args:
-            a (optional, default = 1.6e7)
-            b (optional, default = 1e11)
-            c (optional, default = 13)
-        """
-        if self.beam_profile is None:
-            raise Exception('Attribute' +  self.__class__.__name__ + '.beam_profile can\'t be None.')
-        if self.det_shape is None:
-            raise Exception('Attribute' + self.__class__.__name__ + '.det_shape can\'t be None.')
-
-        cols = self.det_shape[0]
-        rows = self.det_shape[1]
-
-        if cols % 2 == 0 and rows % 2 == 0:
-            col_1 = cols/2
-            row_1 = rows/2
-            distribution_on_axis = 0
-
-            for col in [col_1, col_1 + 1]:
-                for row in [row_1, row_1 + 1]:
-                    distribution_on_axis += self.beam_profile[col, row]
-
-            distribution_on_axis *= 0.25
-
-        elif cols % 2 == 1 and rows % 2 == 1:
-            col_0 = cols/2
-            row_0 = rows/2
-            distribution_on_axis = self.beam_profile[col_0, row_0]
-
-        elif cols % 2 == 0:
-            col_1 = cols/2
-            row_0 = rows/2
-            distribution_on_axis = 0
-
-            for col in [col_1, col_1 + 1]:
-            distribution_on_axis += self.beam_profile[col, row_0]
-
-            distribution_on_axis *= 0.5
-
-        else:
-            col_0 = cols/2
-            row_1 = rows/2
-            distribution_on_axis = 0
-
-            for row in [row_1, row_1 + 1]:
-            distribution_on_axis += self.beam_profile[col_0, row]
-
-            distribution_on_axis *= 0.5
 
 
-
-        return
-####
     def add_noise(self, accumulation=1, image=None, std=None):
         """Adds and accumulates a normal distributed noise to an image.
 
@@ -407,7 +383,7 @@ class Detection:
         # Choosing the image for adding noise:
         if image is None:
             without_noise = self.ideal_detector
-            # TODO Add sth for a situation, when image is not an ndarray.
+
         else:
             without_noise = image
 
