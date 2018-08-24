@@ -16,7 +16,7 @@ import numpy as np
 from skimage import transform
 
 
-def _beam_profile_fkt(x, y, x_0, y_0, c, asymmetry = 1):
+def _beam_profile_fkt(x, y, x_0, y_0, std, x_y_ratio = 1):
     """Function defining the gaussian beam profile. (not normed)
 
     Args:
@@ -24,7 +24,8 @@ def _beam_profile_fkt(x, y, x_0, y_0, c, asymmetry = 1):
       y (float) : y coordinate.
       x_0 (float): beam center (x coordinate).
       y_0 (float): beam center (y coordinate).
-      asymmetry(float): beam width asymmetry. Ratio of the standard
+      std (float): standard deviation
+      x_y_ratio(float): beam width asymmetry. Ratio of the standard
           deviation in x direction to the standard deviation in y direction.
 
     Returns:
@@ -34,9 +35,10 @@ def _beam_profile_fkt(x, y, x_0, y_0, c, asymmetry = 1):
     # I have simplified the expression a bit, but it should be
     # still same as in the previous script.
     # add the asymmetry:
-    std_x = c * np.sqrt(asymmetry)
-    std_y = c / np.sqrt(asymmetry)
+    std_x = std * np.sqrt(x_y_ratio)
+    std_y = std / np.sqrt(x_y_ratio)
     profile = np.exp(-2**(-1) * ((x - x_0)**2 / std_x**2 + (y - y_0)**2 / std_y**2))
+    # exp(-2*((((x-PixelsY/2)^2+(y-PixelsX/2)^2))^(1/2)/(detectorbeamwidth/Pixelsize)).^2)
     return profile
 
 
@@ -335,9 +337,10 @@ class Detection:
         # Backwards compatibility for the default distribution. When user
         # doesn't specify the distribution.
         if self.cfg.beam_distribution == _beam_profile_fkt:
-            # c - scaling parameter - standard deviation
-            c = np.sqrt(self.cfg.det_beam_width / self.cfg.det_pixel_size)
-            args = (c,)
+            # std scaling parameter - standard deviation
+            #  beam width = 2*std
+            std = 0.5 * self.cfg.det_beam_width / self.cfg.det_pixel_size
+            args = (std,)
         # This default distribution is not normalized. It's equal to 1
         # at the beam center. Photons per pixel on axis are used as
         # the scaling parameter. (It has to be calculated separately,
@@ -399,7 +402,7 @@ class Detection:
             # if it's not explicitly specified:
             std = np.sqrt(without_noise)
 
-        accumulated = np.zeros(self.det_shape)  # no accumulation yet.
+        accumulated = np.zeros(self.det_shape, dtype='int32')  # no accumulation yet.
 
         # Accumulating noise:
         for _ in range(accumulation):
@@ -417,14 +420,17 @@ class Detection:
         calculated from it.
 
         Args:
-            detected_img (ndarray): Main detector output, usually
+            detected_img (ndarray of int): Main detector output, usually
             accumulated noisy images.
-            baseline_img (ndarray): Reference image, obtained without
+            baseline_img (ndarray of int): Reference image, obtained without
             the analyzer in the beam line.
 
         Returns:
             rotation(ndarray): The rephobtained faraday rotation.
         """
+        # TODO check if the input arrays are of integer type, otherwise convert(?).
+        # avoid a division by zero.
+         baseline_img[baseline_img==0] = 1
 
         intensity = detected_img/baseline_img
         # Calculate cos^2(theta):
