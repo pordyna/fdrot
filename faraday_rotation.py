@@ -16,15 +16,16 @@ import numpy as np
 from skimage import transform
 
 
-def _beam_profile_fkt(x, y, x_0, y_0, c):
-    """Function defining the beam profile.
+def _beam_profile_fkt(x, y, x_0, y_0, c, asymmetry = 1):
+    """Function defining the gaussian beam profile. (not normed)
 
     Args:
       x (float) : x coordinate.
       y (float) : y coordinate.
       x_0 (float): beam center (x coordinate).
       y_0 (float): beam center (y coordinate).
-      c (float):  scaling parameter.
+      asymmetry(float): beam width asymmetry. Ratio of the standard
+          deviation in x direction to the standard deviation in y direction.
 
     Returns:
       float: The function value at (x,y).
@@ -32,8 +33,11 @@ def _beam_profile_fkt(x, y, x_0, y_0, c):
 
     # I have simplified the expression a bit, but it should be
     # still same as in the previous script.
-    # norm?? (!)gedit
-    return np.exp((-2/c**2 * ((x - x_0)**2 + (y - y_0)**2)))
+    # add the asymmetry:
+    std_x = c * np.sqrt(asymmetry)
+    std_y = c / np.sqrt(asymmetry)
+    profile = np.exp(-2**(-1) * ((x - x_0)**2 / std_x**2 + (y - y_0)**2 / std_y**2))
+    return profile
 
 
 class Target:
@@ -58,10 +62,10 @@ class Simulation:
     Attributes:
       target (Target): Target configuration.
 
-      x_s (int): targets start coordinate in x direction.
-      x_e (int): targets end coordinate in x direction.
-      y_s (int): targets start coordinate in y direction.
-      y_e (int): targets end coordinate in y direction.
+      ta_x_s (int): targets start coordinate in x direction.
+      ta_x_e (int): targets end coordinate in x direction.
+      ta_y_s (int): targets start coordinate in y direction.
+      ta_y_e (int): targets end coordinate in y direction.
       grid_size (tuple) : shape of the grid as a tuple of two integers.
 
       cellsize_x: Cell size in x direction.
@@ -319,8 +323,8 @@ class Detection:
         if position is not None:
             self.cfg.beam_position = position
         # values should be calculated for a pixel center:
-        x = np.arange(0, self.det_shape[0])   + 0.5
-        y = np.arange(0, self.det_shape[1])   + 0.5
+        x = np.arange(0, self.det_shape[0]) + 0.5
+        y = np.arange(0, self.det_shape[1]) + 0.5
 
 
 
@@ -331,8 +335,8 @@ class Detection:
         # Backwards compatibility for the default distribution. When user
         # doesn't specify the distribution.
         if self.cfg.beam_distribution == _beam_profile_fkt:
-            # c - scaling parameter ~ (standard deviation)^2
-            c = self.cfg.det_beam_width / self.cfg.det_pixel_size
+            # c - scaling parameter - standard deviation
+            c = np.sqrt(self.cfg.det_beam_width / self.cfg.det_pixel_size)
             args = (c,)
         # This default distribution is not normalized. It's equal to 1
         # at the beam center. Photons per pixel on axis are used as
