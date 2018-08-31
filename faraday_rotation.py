@@ -131,7 +131,7 @@ class Configuration:
 
       det_obs_energy (float): Observation energy in keV.
       det_trans_channel : Transmission of all channel cuts including spectral
-         bandwidth # max trans*BW_cc/BW_lcls, asymm.
+         bandwidth asymmetry.
       det_pixel_size (float): Pixel size in micron.
       det_beam_width (optional, float): beam width at the detector in micron.
           It has to be set, if the beam distribution was not specified and
@@ -292,7 +292,6 @@ class Detection:
 
         # angle between the direction of the rotated polarization
         # and the analyst position.
-        # (changed) Left the '+'. After redefining angles should be a '-'.
         theta = (self.rotation - self.cfg.an_position)/1000
 
         # mrad -> rad => 1/1000 factor
@@ -402,6 +401,9 @@ class Detection:
             # if it's not explicitly specified:
             std = np.sqrt(without_noise)
 
+
+
+
         accumulated = np.zeros(self.det_shape, dtype='int32')  # no accumulation yet.
 
         # Accumulating noise:
@@ -410,6 +412,7 @@ class Detection:
             noise = ((without_noise + std
                       * np.random.randn(*self.det_shape)).astype('int32'))
             accumulated = accumulated + noise
+
         return accumulated
 
     def reobtain_rotation(self, detected_img, baseline_img):
@@ -421,16 +424,15 @@ class Detection:
 
         Args:
             detected_img (ndarray of int): Main detector output, usually
-            accumulated noisy images.
-            baseline_img (ndarray of int): Reference image, obtained without
-            the analyzer in the beam line.
+                accumulated noisy images.
+            baseline_img (ndarray or masked_array of int): Reference image,
+                obtained without the analyzer in the beam line. Must not contain
+                zeros (division). Zeros can also be masked.
+
 
         Returns:
             rotation(ndarray): The rephobtained faraday rotation.
         """
-        # TODO check if the input arrays are of integer type, otherwise convert(?).
-        # avoid a division by zero.
-         baseline_img[baseline_img==0] = 1
 
         intensity = detected_img/baseline_img
         # Calculate cos^2(theta):
@@ -447,9 +449,21 @@ class Detection:
         # is smaller than the smallest rotation, theta is greater then zero.
         # That means that there is no sign ambiguity when obtaining theta with
         # arccos.
-        theta = 0.5 * np.arccos(cos_2theta)
+        try:
+            cos_2theta.mask  # Check if it's a masked array.
+        except AttributeError:
+            theta = 0.5 * np.arccos(cos_2theta)  # proceed normally, if it's not.
+        else:
+            # otherwise calculate arccos on an array with masked values replaced.
+            # np.arccos doesn't seem to work with an masked array.
+            cos_2theta.fill_value = 0.5  # Has to be in arccos domain.
+            theta = 0.5 * np.arccos(cos_2theta.filled())
+            # Apply the same mask again:
+            theta = theta.view(np.ma.MaskedArray)
+            theta.mask = cos_2theta.mask
+
         # Calculate rotation:
-        # (changed) analyzer position +- correct definition -> sign in eq. changes.
+
         # Factor 1000 is for the rad -> mrad conversion.
         rotation = theta*1000 + self.cfg.an_position
         # It's on pixels. Would an interpolation back to the cells make
