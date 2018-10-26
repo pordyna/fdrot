@@ -178,6 +178,7 @@ def rotation_timeresolved( steps, intervals, interpolation=False):
         elif not steps[ii].flags['C_CONTIGUOUS']:
             print('input_data has to be a contigous array.')
             raise ValueError
+        # TODO: float32 shoudl also be ok. this means adapting the rotation_slice fkt. (float vs double).
         if steps[ii].dtype != np.float64:
             print('input should be an ndarray of type np.float64.')
             print('Converting to float64 and continuing...')
