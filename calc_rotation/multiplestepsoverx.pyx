@@ -7,7 +7,7 @@ from libc.math cimport sqrt
 @cython.cdivision(True)
 @cython.boundscheck(False)
 @cython.wraparound(False)
-cdef int _rotation_slice(double [:,::1] input_data, double [:,::1] output_data, Py_ssize_t interval_start,
+cdef int rotation_slice(double [:,::1] input_data, double [:,::1] output_data, Py_ssize_t interval_start,
                          Py_ssize_t interval_stop, double factor=1, bint interpolation=0, bint inc_sym=0):
     cdef Py_ssize_t r_len, s_len
     r_len = input_data.shape[1]
@@ -48,7 +48,7 @@ cdef int _rotation_slice(double [:,::1] input_data, double [:,::1] output_data, 
                     rr = int(radius)
                     summed_line_up += (input_data[zz,r_len_half  + rr]
                                         * (yy + 0.25)/radius)
-                output_data[r_len_half - yy ,zz] = factor * summed_line_up
+                output_data[r_len_half - yy ,s_len -1 - zz] = factor * summed_line_up
         else:
             for zz in range(s_len):
                 for xx in range(interval_start - yy, interval_stop , -1):
@@ -65,7 +65,7 @@ cdef int _rotation_slice(double [:,::1] input_data, double [:,::1] output_data, 
                                                      * (radius - rr))
                     summed_line_up += (interpolated_value_up
                                        * (yy + 0.25)/radius)
-                output_data[r_len_half - yy ,zz] = factor * summed_line_up
+                output_data[r_len_half - yy ,s_len -1 - zz] = factor * summed_line_up
 
     if interpolation:
         for zz in range(s_len):
@@ -102,8 +102,8 @@ cdef int _rotation_slice(double [:,::1] input_data, double [:,::1] output_data, 
                                        * (yy + 0.5)/radius)
                     summed_line_down += (interpolated_value_down
                                          * (yy + 0.5)/radius)
-                output_data[r_len_half - offset -yy ,zz] = factor * summed_line_up
-                output_data[r_len_half +  yy, zz]  = factor * summed_line_down
+                output_data[r_len_half - offset -yy, s_len - 1 - zz] = factor * summed_line_up
+                output_data[r_len_half +  yy,  s_len - 1 - zz]  = factor * summed_line_down
     else:
         for zz in range(s_len):
             for yy in range(loop_start, r_len_half):
@@ -127,8 +127,8 @@ cdef int _rotation_slice(double [:,::1] input_data, double [:,::1] output_data, 
                                        * (yy + 0.5)/radius)
                     summed_line_down += (interpolated_value_down
                                          * (yy + 0.5)/radius)
-                output_data[r_len_half - offset -yy ,zz] = factor * summed_line_up
-                output_data[r_len_half +  yy, zz]  = 2 * factor * summed_line_down
+                output_data[r_len_half - offset -yy ,s_len - 1 - zz] = factor * summed_line_up
+                output_data[r_len_half +  yy, s_len - 1 - zz]  = 2 * factor * summed_line_down
 
     return 0
 
@@ -174,7 +174,7 @@ def rotation_timeresolved( steps, intervals, interpolation=False):
             raise
         if steps[ii].flags['F_CONTIGUOUS']:
             print('input_data should be stored in a raw major, C contigous.')
-
+            raise ValueError
         elif not steps[ii].flags['C_CONTIGUOUS']:
             print('input_data has to be a contigous array.')
             raise ValueError
@@ -182,8 +182,7 @@ def rotation_timeresolved( steps, intervals, interpolation=False):
             print('input should be an ndarray of type np.float64.')
             print('Converting to float64 and continuing...')
             input_data = steps[ii].astype(np.float64)
-        step_view  = steps[ii]
-        _rotation(steps[ii], output, intervals[ii], interpolation)
+        rotation_slice(steps[ii], output, intervals[ii], interpolation)
         end_output += output
     return end_output
 
