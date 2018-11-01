@@ -1,6 +1,6 @@
 import numpy as np
 from os.path import isfile
-class Sequence:
+class SimSequence:
     """
 
     """
@@ -43,4 +43,7 @@ class FilesList:
             if  ok:
                 print("All files exist.")
         return ok
-def
+def const_velocity(files: FilesList, vel: float, inc_time: float, length: float) -> SimSequence:
+    """ determines the proper sequence from ..., loads the files to the memory and return an Sequence object."""
+    # get the first time step to use:
+    files.si
