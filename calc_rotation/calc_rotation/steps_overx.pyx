@@ -24,7 +24,7 @@ cdef int rotation_slice(double [:,::1] input_data, double [:,::1] output_data, P
     cdef double* value_1_up
     cdef double* value_2_down
     cdef double* value_2_up
-
+    # TODO: (maybe) write a short c-like function for the interpolation, with an option for no interpolation.
     # when using without without slicing (just one step), multiply the outcome with 2,
     # to include the other identical part.
     if inc_sym:
@@ -140,10 +140,10 @@ def rotation(input_data, interpolation=False):
         print('input_data should be a numpy array!')
         raise
     if input_data.flags['F_CONTIGUOUS']:
-        print('input_data should be stored in a raw major, C contigous.')
+        print('input_data should be stored in a raw major, C contiguous.')
         raise ValueError
     elif not input_data.flags['C_CONTIGUOUS']:
-        print('input_data has to be a contigous array.')
+        print('input_data has to be a contiguous array.')
         raise ValueError
     if input_data.dtype != np.float64:
         print('input should be an ndarray of type np.float64.')
@@ -173,10 +173,10 @@ def rotation_timeresolved( steps, intervals, interpolation=False):
             print('input_data should be a numpy array!')
             raise
         if steps[ii].flags['F_CONTIGUOUS']:
-            print('input_data should be stored in a raw major, C contigous.')
+            print('input_data should be stored in a raw major, C contiguous.')
             raise ValueError
         elif not steps[ii].flags['C_CONTIGUOUS']:
-            print('input_data has to be a contigous array.')
+            print('input_data has to be a contiguous array.')
             raise ValueError
         # TODO: float32 shoudl also be ok. this means adapting the rotation_slice fkt. (float vs double).
         if steps[ii].dtype != np.float64:
