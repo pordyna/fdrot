@@ -3,19 +3,20 @@ from os.path import isfile
 from typing import Union, Iterable, Callable, Tuple, Sequence, MutableSequence, Optional, Any
 from warnings import warn
 
+from os import path
 class SimSequence:
     """
 
     """
-    def __init__(self, slices_x: Sequence[Tuple[int,int]], slices_views: MutableSequence[np.ndarray]) -> None:
+    def __init__(self, slices_x: Sequence[Tuple[int,int]], iterations: Sequence) -> None:
         """ """
         self.slices = slices_x # list of tuples
-        self.views = slices_views # list of numpy slices_views
+        self.iterations = iterations
 
-    def make_contiguous(self):
-        for ii, view in enumerate(self.views):
-            if not  view.flags['C_CONTIGUOUS']:
-                self.views[ii] = np.ascontiguousarray(view)
+ #   def make_contiguous(self):
+ #       for ii, view in enumerate(self.views):
+ #           if not  view.flags['C_CONTIGUOUS']:
+ #               self.views[ii] = np.ascontiguousarray(view)
 
 
 class FilesList:
@@ -57,20 +58,11 @@ class FilesList:
             warn('The IDs should be unique. Removing obsolete values and continuing.')
         self.ids = u_sorted
 
-    @property
-    def path(self):
-        return self.path
-    @path.setter
-    def path(self, s : str) -> None:
-        s = s.strip()
-        if s[-1] != '/' :
-            s = s + '/'
-        self.path = s
-
     def full_path(self, id: int) -> str:
         if id not in self.ids:
             raise ValueError('The id has to be listed in `ids` Attribute!')
-        full_path = self.path + self.name_front + str(id) + self.name_end
+        full_path = path.join(self.path, self.name_front + str(id) + self.name_end)
+        full_path = path.normpath(full_path)
         return full_path
 
     def check(self, noprint: bool = False) -> Tuple[bool, list]:
