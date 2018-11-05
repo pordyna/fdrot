@@ -2,7 +2,7 @@ cimport cython
 # cimport numpy as np
 import  numpy as np
 from libc.math cimport sqrt
-
+from typing import Tuple
 
 @cython.cdivision(True)
 @cython.boundscheck(False)
@@ -28,16 +28,19 @@ cdef int rotation_slice(double [:,::1] input_data, double [:,::1] output_data, P
     # when using without without slicing (just one step), multiply the outcome with 2,
     # to include the other identical part.
     if inc_sym:
-        factor *= factor
+        factor *= 2
 
     cdef Py_ssize_t offset, loop_start
+    cdef bint middle_line_splitting = 0
     if  r_len%2 == 0:
         offset = 1
         loop_start = 0
     else:
         offset = 0
         loop_start = 1
-
+        if interval_stop == 0:
+            interval_stop = 1
+            middle_line_splitting = 1
         yy = 0
         summed_line_up = 0
         # just the middle line
@@ -98,10 +101,14 @@ cdef int rotation_slice(double [:,::1] input_data, double [:,::1] output_data, P
                                                    value_diff_down
                                                    * (radius - rr))
 
+                    #
                     summed_line_up += (interpolated_value_up
                                        * (yy + 0.5)/radius)
                     summed_line_down += (interpolated_value_down
                                          * (yy + 0.5)/radius)
+                if middle_line_splitting:
+                    pass  # to be implemented
+
                 output_data[r_len_half - offset -yy, s_len - 1 - zz] = factor * summed_line_up
                 output_data[r_len_half +  yy,  s_len - 1 - zz]  = factor * summed_line_down
     else:
@@ -125,7 +132,7 @@ cdef int rotation_slice(double [:,::1] input_data, double [:,::1] output_data, P
 
                     summed_line_up += (interpolated_value_up
                                        * (yy + 0.5)/radius)
-                    summed_line_down += (interpolated_value_down
+                    summed_line_down += (inslicterpolated_value_down
                                          * (yy + 0.5)/radius)
                 output_data[r_len_half - offset -yy ,s_len - 1 - zz] = factor * summed_line_up
                 output_data[r_len_half +  yy, s_len - 1 - zz]  = 2 * factor * summed_line_down
@@ -155,35 +162,49 @@ def rotation(input_data, interpolation=False):
 
     cdef double [:,::1] input_data_view = input_data
     cdef double [:,::1] output_view = output
-    rotation_slice(input_data_view, output_view, (input_data.shape[1], 0),
+    rotation_slice(input_data_view, output_view, input_data.shape[1], 0 ,
                    interpolation=interpolation, inc_sym=1)
     return output
 
-def rotation_timeresolved( steps, intervals, interpolation=False):
-    if  len(steps) != len(intervals):
-        raise ValueError
-    cdef double [:,::1] step_view
-    output = np.zeros(steps[0].size, dtype=np.float64,
-                      order = "C").reshape(steps[0].shape[1], steps[0].shape[0])
-    end_output = np.zeros_like(output)
-    for ii in range(len(steps)):
-        try:
-            steps[ii].flags
-        except AttributeError:
-            print('input_data should be a numpy array!')
-            raise
-        if steps[ii].flags['F_CONTIGUOUS']:
-            print('input_data should be stored in a raw major, C contiguous.')
-            raise ValueError
-        elif not steps[ii].flags['C_CONTIGUOUS']:
-            print('input_data has to be a contiguous array.')
-            raise ValueError
-        # TODO: float32 shoudl also be ok. this means adapting the rotation_slice fkt. (float vs double).
-        if steps[ii].dtype != np.float64:
-            print('input should be an ndarray of type np.float64.')
-            print('Converting to float64 and continuing...')
-            input_data = steps[ii].astype(np.float64)
-        rotation_slice(steps[ii], output, intervals[ii], interpolation)
-        end_output += output
-    return end_output
+# def rotation_timeresolved( steps, intervals, interpolation=False):
+#   if  len(steps) != len(intervals):
+#        raise ValueError
+#    cdef double [:,::1] step_view
+#    output = np.zeros(steps[0].size, dtype=np.float64,
+#                       order = "C").reshape(steps[0].shape[1], steps[0].shape[0])
+#     end_output = np.zeros_like(output)
+#     for ii in range(len(steps)):
+#         try:
+#             steps[ii].flags
+#         except AttributeError:
+#             print('input_data should be a numpy array!')
+#             raise
+#         if steps[ii].flags['F_CONTIGUOUS']:
+#             print('input_data should be stored in a raw major, C contiguous.')
+#             raise ValueError
+#         elif not steps[ii].flags['C_CONTIGUOUS']:
+#             print('input_data has to be a contiguous array.')
+#             raise ValueError
+#         # TODO: float32 shoudl also be ok. this means adapting the rotation_slice fkt. (float vs double).
+#         if steps[ii].dtype != np.float64:
+#             print('input should be an ndarray of type np.float64.')
+#             print('Converting to float64 and continuing...')
+#             input_data = steps[ii].astype(np.float64)
+#         rotation_slice(steps[ii], output, intervals[ii], interpolation)
+#         end_output += output
+#     return end_output
 
+def  one_step_long_pulse(double [:,:,::1] output, double [:,::1] step, Py_ssize_t full_step_size,
+                         Py_ssize_t x_start_glob, Py_ssize_t x_end_glob, Py_ssize_t leading_interval_start, float factor, bint interpolation) -> None:
+    cdef Py_ssize_t n, interval_start, interval_stop
+    n = output.shape[0]
+    for nn in range(n)
+        interval_start = leading_interval_start - nn
+        interval_stop = interval_start + full_step_size
+        if interval_start < x_start_glob:
+            interval_start = x_start_glob
+        if interval_stop > x_end_glob:
+            interval_stop = x_end_glob
+        if interval_stop <= interval_start:
+            break  #   Continue would be more clear, but for further nn it will also continue, so no point in that.
+        rotation_slice(step, output[n -nn,:,:], interval_start, interval_stop, factor=factor, interpolation=interpolation)
