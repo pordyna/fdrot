@@ -1,6 +1,7 @@
 cimport cython
 import  numpy as np
 from libc.math cimport sqrt
+from libc.math cimport ceil
 from typing import Tuple
 
 # cdef inline double d_square(double x): # maybe use instead of x**2, should be faster
@@ -9,6 +10,7 @@ from typing import Tuple
 @cython.cdivision(True)
 @cython.boundscheck(False)
 @cython.wraparound(False)
+# TODO add a bint for including symmetric part only for the middle, vertical, line.
 cdef int kernel_2d_perp(double [:,::1] input_data, double [:,::1] output_data, Py_ssize_t interval_start,
                          Py_ssize_t interval_stop, double factor=1, bint interpolation=0, bint inc_sym=0):
     # array shape:
@@ -166,35 +168,70 @@ def rotation_static_2d(input_data, interpolation=False):
                    interpolation=interpolation, inc_sym=1)
     return output
 
-def translator(start, stop, full_length):
-     half = full_length / 2
-    if full_length %2 == 0:
-        modifier = ...
+ctypedef struct Interval:
+    Py_ssize_t start
+    Py_ssize_t end
 
-    if start <= half and stop <= stop:
-        con_start = half - start
-        stop = half - stop
-    if start > half and stop < stop:
-        con_start = stop - half
-        con_stop = start - half
-    if start <= half and stop > half:
-        # split it !
+cdef Interval translator(Py_ssize_t start, Py_ssize_t stop, Py_ssize_t half, bint odd) except -1:
+    """ start and stop : 0 ist the first one
 
-    return
+    """
+    if start == stop:
+        raise ValueError("Interval must be longer than 0")
 
-def  one_step_long_pulse(double [:,:,::1] output, double [:,::1] step, Py_ssize_t full_step_size,
-                         Py_ssize_t x_start_glob, Py_ssize_t x_end_glob, Py_ssize_t leading_interval_start, float factor, bint interpolation) -> None:
+    cdef Py_ssize_t modifier
+    if odd:
+         modifier = 1
+    else:
+         modifier = 0
+    cdef Iterval converted
+     if start < half + modifier and stop <= half + modifier:
+         converted.start = half - start + modifier
+         converted.stop = half - stop + modifier
+     if start >= half  and stop > half:
+         converted.start = stop - half + 1
+         converted.stop = start - half + 1
+     else:
+        raise ValueError("Interval goes over the middle point. You have to split it first.")
 
-    raise NotImplementedError
-    cdef Py_ssize_t n, interval_start, interval_stop
-    n = output.shape[0]
-    for nn in range(n)
-        interval_start = leading_interval_start - nn
-        interval_stop = interval_start + full_step_size
-        if interval_start < x_start_glob:
-            interval_start = x_start_glob
-        if interval_stop > x_end_glob:
-            interval_stop = x_end_glob
-        if interval_stop <= interval_start:
-            break  #   Continue would be more clear, but for further nn it will also continue, so no point in that.
-        rotation_slice(step, output[n -nn,:,:], interval_start, interval_stop, factor=factor, interpolation=interpolation)
+     return converted
+
+cdef bint if_split(Py_ssize_t start, Py_ssize_t stop, Py_ssize_t half, bint odd): # maybe inline it
+    # half = r_len // 2
+    cdef Py_ssize_t modifier
+    if odd:
+        modifier = 1
+    else:
+        modifier = 0
+    if start < half and stop > half + modifier:
+        return True
+    else:
+        return False
+
+def  one_step_extended_pulse(double [:,:,::1] output, double [:,::1] step, Py_ssize_t full_step_size,
+                         Py_ssize_t x_start_glob, Py_ssize_t x_end_glob, Py_ssize_t leading_interval_start, float factor, bint interpolation):
+     cdef Py_ssize_t n, r_len, interval_start, interval_stop
+     cdef Py_ssize_t n = output.shape[0]
+     cdef Py_ssize_t r_len = step.shape[1]
+     cdef Py_ssize_t half = r_len // 2
+     cdef bint odd = False
+     if r_len%2 !=2:
+        odd = True
+     for nn in range(n)
+         interval_start = leading_interval_start - nn
+         interval_stop = interval_start + full_step_size -nn
+         if interval_start < x_start_glob:
+             interval_start = x_start_glob
+         if interval_stop > x_end_glob:
+             interval_stop = x_end_glob
+         if interval_stop <= interval_start:
+             break  #   Continue would be more clear, but for further nn it will also continue, so no point in that.
+         def Interval current_interval
+         if if_split(interval_start, interval_stop, half, odd):
+            current_interval = translator(interval_start, half)
+            kernel_2d_perp(...,current_interval.start, current_interval.stop, ...)
+            current_interval = translator(half, interval_stop)
+            kernel_2d_perp(...,current_interval.start, current_interval.stop, ...)
+         else:
+            current_interval = translator(interval_start, interval_stop)
+            kernel_2d_perp(...,current_interval.start, current_interval.stop, ...)
