@@ -4,5 +4,5 @@ from Cython.Build import cythonize
 
 extensions = [Extension('rotation', ['rotation.pyx'])]
 setup(
-    ext_modules=cythonize(extensions, gdb_debug=False)
+    ext_modules=cythonize(extensions, annotate=True, gdb_debug=False)
 )

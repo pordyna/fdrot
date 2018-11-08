@@ -14,7 +14,7 @@ class SimSequence:
         self.iterations = iterations
         self.files = files
 
-    def get_data(self, steps: Union[int, Sequence[int], str], make_contiguous: bool = True)->  MutableSequence[np.ndarray]:
+    def get_data(self, steps: Union[int, Sequence[int], str], make_contiguous: bool = True)-> MutableSequence[np.ndarray]:
         try:
             steps.strip()
         except AttributeError:
