@@ -6,13 +6,15 @@ from typing import Tuple
 
 # cdef inline double d_square(double x): # maybe use instead of x**2, should be faster
 #   return x*x
+# TODO introduce used types and casting if needed. So that input, output can be of single precision.
 
 @cython.cdivision(True)
 @cython.boundscheck(False)
 @cython.wraparound(False)
 # TODO add a bint for including symmetric part only for the middle, vertical, line.
 cdef int kernel_2d_perp(double [:,::1] input_data, double [:,::1] output_data, Py_ssize_t interval_start,
-                         Py_ssize_t interval_stop, double factor=1, bint interpolation=0, bint inc_sym=0):
+                         Py_ssize_t interval_stop, double factor=1, bint interpolation=0, bint inc_sym=0,
+                        bint inc_sym_only_vertical_middle=0):
     # array shape:
     cdef Py_ssize_t r_len, s_len
     r_len = input_data.shape[1]
@@ -22,6 +24,7 @@ cdef int kernel_2d_perp(double [:,::1] input_data, double [:,::1] output_data, P
     cdef Py_ssize_t yy, xx ,rr, zz
     # 'up' and 'down' stand for the upper and lower parts of the distribution.
     cdef double radius
+    cdef double rr_exact
     cdef double summed_line_up, summed_line_down
     # linear interpolation:
     cdef double interpolated_value_up, interpolated_value_down
@@ -40,11 +43,14 @@ cdef int kernel_2d_perp(double [:,::1] input_data, double [:,::1] output_data, P
     cdef Py_ssize_t offset, loop_start
     cdef float r_offset
     cdef bint middle_line_splitting = 0
+    cdef bint odd
     if  r_len%2 == 0:
+        odd = 0
         offset = 1
         loop_start = 0
         r_offset = 0.5
     else:
+        odd = 1
         offset = 0
         loop_start = 1
         r_offset = 0
@@ -64,8 +70,8 @@ cdef int kernel_2d_perp(double [:,::1] input_data, double [:,::1] output_data, P
             for xx in range(interval_start , interval_stop , -1):
                 # This is the radius at the middle point of the cell (point P), halfway through
                 # a single step (xx +1) in the propagation direction (X-direction).
-                # The r_offset is not applied to the radius, it self, yet.
                 radius = sqrt((0.25)**2 + (xx - r_offset)**2)
+                rr_exact = rr
                 rr = int(radius)
                 # Value at floor(radius).
                 value_1_up = &input_data[zz,r_len_half + rr]
@@ -77,12 +83,12 @@ cdef int kernel_2d_perp(double [:,::1] input_data, double [:,::1] output_data, P
                     value_diff_up = value_2_up[0] - value_1_up[0]
                     interpolated_value_up = (value_1_up[0] +
                                                  value_diff_up
-                                                 * (radius - (rr + r_offset)))
+                                                 * (radius - rr_exact))
                 # Add to the integral.
                 summed_line_up += (interpolated_value_up
                                    * (0.25)/radius)
             # Write the output.
-            output_data[r_len_half, s_len -1 - zz] = factor * summed_line_up
+            output_data[r_len_half, s_len -1 - zz] += factor * summed_line_up
 
     # Main part:
     # The first loop is over slices.
@@ -114,6 +120,10 @@ cdef int kernel_2d_perp(double [:,::1] input_data, double [:,::1] output_data, P
                     interpolated_value_up = value_1_up[0]
                     interpolated_value_down = value_1_down[0]
                 else:
+                    if odd:
+                        rr_exact = rr
+                    else:
+                        rr_exact = sqrt(0.5**2 + (rr + 0.5)**2)
                     # Interpolation between two data points.
                     value_2_up = &input_data[zz,r_len_half + rr +1]
                     value_2_down = &input_data[zz,r_len_half  - offset - rr - 1]
@@ -123,21 +133,49 @@ cdef int kernel_2d_perp(double [:,::1] input_data, double [:,::1] output_data, P
 
                     interpolated_value_up = (value_1_up[0] +
                                              value_diff_up
-                                             * (radius - (rr + r_offset)))
+                                             * (radius - rr_exact))
                     interpolated_value_down = (value_1_down[0] +
                                                value_diff_down
-                                               * (radius - (rr + r_offset)))
+                                               * (radius - rr_exact))
                 # Add to the integrals.
                 summed_line_up += (interpolated_value_up
                                    * (yy + 0.5)/radius)
                 summed_line_down += (interpolated_value_down
                                      * (yy + 0.5)/radius)
             if middle_line_splitting:
-                pass  # to be implemented
+                cdef float extra_factor = 0.5
+                if inc_sym_only_vertical_middle:
+                    extra_factor = 1
+                radius = sqrt((yy + 0.5)**2 + 0.25**2)
+                rr = int(radius)
+                value_1_up = &input_data[zz,r_len_half + rr]
+                value_1_down = &input_data[zz, r_len_half - offset - rr]
+                if not interpolation or r_len_half - 1 == rr:
+                    interpolated_value_up = value_1_up[0]
+                    interpolated_value_down = value_1_down[0]
+                else:
+                    rr_exact = rr #
+                    # Interpolation between two data points.
+                    value_2_up = &input_data[zz,r_len_half + rr +1]
+                    value_2_down = &input_data[zz,r_len_half  - offset - rr - 1]
 
+                    value_diff_up = value_2_up[0] - value_1_up[0]
+                    value_diff_down = value_2_down[0] - value_1_down[0]
+
+                    interpolated_value_up = extra_factor * (value_1_up[0] +
+                                             value_diff_up
+                                             * (radius - rr_exact))
+                    interpolated_value_down = extra_factor * (value_1_down[0] +
+                                               value_diff_down
+                                               * (radius - rr_exact))
+                # Add to the integrals.
+                summed_line_up += (interpolated_value_up
+                                   * (yy + 0.5)/radius)
+                summed_line_down += (interpolated_value_down
+                                     * (yy + 0.5)/radius)
             # Write the output.
-            output_data[r_len_half - offset -yy, s_len - 1 - zz] = factor * summed_line_up
-            output_data[r_len_half +  yy,  s_len - 1 - zz]  = factor * summed_line_down
+            output_data[r_len_half - offset -yy, s_len - 1 - zz] += factor * summed_line_up
+            output_data[r_len_half +  yy,  s_len - 1 - zz]  += factor * summed_line_down
 
     return 0
 
@@ -211,27 +249,42 @@ cdef bint if_split(Py_ssize_t start, Py_ssize_t stop, Py_ssize_t half, bint odd)
 def  one_step_extended_pulse(double [:,:,::1] output, double [:,::1] step, Py_ssize_t full_step_size,
                          Py_ssize_t x_start_glob, Py_ssize_t x_end_glob, Py_ssize_t leading_interval_start, float factor, bint interpolation):
      cdef Py_ssize_t n, r_len, interval_start, interval_stop
-     cdef Py_ssize_t n = output.shape[0]
-     cdef Py_ssize_t r_len = step.shape[1]
+     cdef Py_ssize_t n = output.shape[0] # Number of slices in the beam package.
+     cdef Py_ssize_t r_len = step.shape[1] # Full length of the radial data.
      cdef Py_ssize_t half = r_len // 2
+     # Check, if radial data is of an odd length.
      cdef bint odd = False
      if r_len%2 !=2:
         odd = True
+     # Iterations over the sliced mask for the X-Ray beam.
      for nn in range(n)
          interval_start = leading_interval_start - nn
-         interval_stop = interval_start + full_step_size -nn
+         # we can't just take "interval_end -nn", because the last interval can be trimmed.
+         interval_stop = interval_start + full_step_size - nn
+         # keep interval inside the global boundaries.
          if interval_start < x_start_glob:
              interval_start = x_start_glob
          if interval_stop > x_end_glob:
              interval_stop = x_end_glob
+         # skip a slice, if it's  not included in this time step.
+         # That could happen, if the pulse is not yet, or not anymore, completely inside the simulation box (target).
          if interval_stop <= interval_start:
-             break  #   Continue would be more clear, but for further nn it will also continue, so no point in that.
-         def Interval current_interval
+             continue
+         # Calculating rotation for the current slice in the current step.
+         # The Kernel is designed for integration over the left part of the cylinder, or it's parts.
+         # The  symmetry allows us to use it for the Right side as well.
+         # If the step covers a part of both the left and the right side, it has to be split.
+         # Coordinates in the kernel are defined differently than the starting and endpoints here, so they have
+         # to be converted and eventually mirrored, if the interval is on the right side.
+         cdef Interval current_interval
          if if_split(interval_start, interval_stop, half, odd):
             current_interval = translator(interval_start, half)
-            kernel_2d_perp(...,current_interval.start, current_interval.stop, ...)
+            kernel_2d_perp(step, output[n,:,:] ,current_interval.start, current_interval.stop,
+                           factor=factor, interpolation=interpolation, inc_sym=0, inc_sym_only_vertical_middle=1)
             current_interval = translator(half, interval_stop)
-            kernel_2d_perp(...,current_interval.start, current_interval.stop, ...)
+            kernel_2d_perp(step, output[n,:,:], current_interval.start, current_interval.stop,
+                           factor=factor, interpolation=interpolation, inc_sym=0, inc_sym_only_vertical_middle=1)
          else:
             current_interval = translator(interval_start, interval_stop)
-            kernel_2d_perp(...,current_interval.start, current_interval.stop, ...)
+            kernel_2d_perp(step, output[n,:,:], current_interval.start, current_interval.stop,
+                           factor=factor, interpolation=interpolation, inc_sym=0, inc_sym_only_vertical_middle=1)
