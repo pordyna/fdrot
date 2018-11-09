@@ -1,0 +1,8 @@
+cimport cython
+ctypedef struct Interval:
+    Py_ssize_t start
+    Py_ssize_t end
+
+ctypedef fused floating2:
+    float
+    double

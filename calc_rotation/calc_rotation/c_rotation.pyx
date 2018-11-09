@@ -1,8 +1,12 @@
 cimport cython
 import  numpy as np
 from libc.math cimport sqrt
+from cython cimport floating
+from .c_declarations cimport floating2
+from .c_declarations cimport Interval
 from libc.math cimport ceil
 from typing import Tuple
+
 
 # cdef inline double d_square(double x): # maybe use instead of x**2, should be faster
 #   return x*x
@@ -12,7 +16,8 @@ from typing import Tuple
 @cython.boundscheck(False)
 @cython.wraparound(False)
 # TODO add a bint for including symmetric part only for the middle, vertical, line.
-cdef int kernel_2d_perp(double [:,::1] input_data, double [:,::1] output_data, Py_ssize_t interval_start,
+
+cdef int kernel_2d_perp(floating [:,::1] input_data, floating2 [:,::1] output_data, Py_ssize_t interval_start,
                          Py_ssize_t interval_stop, double factor=1, bint interpolation=0, bint inc_sym=0,
                         bint inc_sym_only_vertical_middle=0):
     # array shape:
@@ -206,9 +211,6 @@ def rotation_static_2d(input_data, interpolation=False):
                    interpolation=interpolation, inc_sym=1)
     return output
 
-ctypedef struct Interval:
-    Py_ssize_t start
-    Py_ssize_t end
 
 cdef Interval translator(Py_ssize_t start, Py_ssize_t stop, Py_ssize_t half, bint odd) except -1:
     """ start and stop : 0 ist the first one
