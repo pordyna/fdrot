@@ -8,7 +8,7 @@ from os import path
 def const_velocity(files: FilesList, vel: float, inc_time: float, start_x: float, end_x: float,
                    iter_step: int = 1, ignore_missing_first_step: bool = False, ignore_missing_last_step: bool = False,
                    tail_cut_threshold: float = 1e-4) -> SimSequence:
-    """ determines the proper sequence from ..., loads the files to the memory and returns a SimSequence object."""
+    """ determines the proper sequence from ..., loads the files_B to the memory and returns a SimSequence object."""
 
     # adapting the time resolution:
     if iter_step != 1 and iter_step % 2 != 0 or iter_step < 1:
@@ -49,7 +49,7 @@ def const_velocity(files: FilesList, vel: float, inc_time: float, start_x: float
         if step_id not in files.ids:
             missing.append(step_id)
         if not missing:
-            print('Following time steps are needed for this Sequence, but not listed in files.ids.')
+            print('Following time steps are needed for this Sequence, but not listed in files_B.ids.')
             print(missing)
             raise ValueError()
 
@@ -103,7 +103,7 @@ def const_velocity(files: FilesList, vel: float, inc_time: float, start_x: float
         if step_id not in files.ids:
             missing.append(step_id)
         if not missing:
-            print('Following time steps are needed for this Sequence, but not listed in files.ids.')
+            print('Following time steps are needed for this Sequence, but not listed in files_B.ids.')
             print(missing)
             raise ValueError
 

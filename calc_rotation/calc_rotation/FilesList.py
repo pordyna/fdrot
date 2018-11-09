@@ -3,8 +3,12 @@ from typing import Union, Iterable, Callable, Tuple, Sequence, MutableSequence, 
 from warnings import warn
 from os import path
 
+class FilesListSingle:
+class FilesListDouble:
 
-class FilesList:
+class OpenPMDList(FilesListDouble):
+
+class UniversalSingle(FilesListSingle):
     """
 
     """
@@ -14,7 +18,7 @@ class FilesList:
         """
         """
         # TODO move descriptions to the class doc_string.
-        self.path = path# path to files
+        self.path = path# path to files_B
         self.single_time_step = single_time_step # duration of a single time step in fs. # to a child class?
         self.ids = ids  # An array of available time steps (integers).
         self.name_front = name_front.strip() # the constant part of a filename  before the number (id)
@@ -28,10 +32,10 @@ class FilesList:
             self. args_export = ()
         else:
             self.args_export = args_export
-        # check if files are there:
+        # check if files_B are there:
         isok, bad = self.check(noprint=True)
         if not isok:
-            print('File check at the initialization performed. Some files are not there. Ids of the missing files are:')
+            print('File check at the initialization performed. Some files_B are not there. Ids of the missing files_B are:')
             print(bad)
 
     @property
@@ -69,14 +73,13 @@ class FilesList:
         ok = bool(bad_ids)
         if not noprint:
             if not ok:
-                print("Some files are missing. Ids of the missing files are:")
+                print("Some files_B are missing. Ids of the missing files_B are:")
                 print(bad_ids)
             if ok:
-                print("All files exist.")
+                print("All files_B exist.")
         return ok, bad_ids
 
     def open(self, iteration: int) -> np.ndarray:
-
         data = self.export_func(self.full_path(iteration), *self.args_export)
         if self.sim_box_shape is None:
             self.sim_box_shape = data.shape
@@ -87,6 +90,6 @@ class FilesList:
 
 
 # class OpenPmdList(FilesList):    coming soon :)
- # also introducing functions, which index files from a directory and create an FilesList/Open... object, would be nice.
+ # also introducing functions, which index files_B from a directory and create an FilesList/Open... object, would be nice.
 
 
