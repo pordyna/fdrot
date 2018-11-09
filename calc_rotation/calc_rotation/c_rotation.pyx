@@ -93,7 +93,7 @@ cdef int kernel_2d_perp(floating [:,::1] input_data, floating2 [:,::1] output_da
                 summed_line_up += (interpolated_value_up
                                    * (0.25)/radius)
             # Write the output.
-            output_data[r_len_half, s_len -1 - zz] += factor * summed_line_up
+            output_data[r_len_half, s_len -1 - zz] += <double>factor * summed_line_up
 
     # Main part:
     # The first loop is over slices.
@@ -179,13 +179,13 @@ cdef int kernel_2d_perp(floating [:,::1] input_data, floating2 [:,::1] output_da
                 summed_line_down += (interpolated_value_down
                                      * (yy + 0.5)/radius)
             # Write the output.
-            output_data[r_len_half - offset -yy, s_len - 1 - zz] += factor * summed_line_up
-            output_data[r_len_half +  yy,  s_len - 1 - zz]  += factor * summed_line_down
+            output_data[r_len_half - offset -yy, s_len - 1 - zz] += <double>factor * summed_line_up
+            output_data[r_len_half +  yy,  s_len - 1 - zz]  += <double>factor * summed_line_down
 
     return 0
 
 
-def rotation_static_2d(input_data, interpolation=False):
+def rotation_static_2d(input_data, interpolation=False, output_dtype=np.float64):
     try:
         input_data.flags
     except AttributeError:
@@ -197,17 +197,15 @@ def rotation_static_2d(input_data, interpolation=False):
     elif not input_data.flags['C_CONTIGUOUS']:
         print('input_data has to be a contiguous array.')
         raise ValueError
-    if input_data.dtype != np.float64:
-        print('input should be an ndarray of type np.float64.')
+    if input_data.dtype != np.float64 and input_data.dtype != np.float32:
+        print('input should be an ndarray of type np.float64, or np.float32')
         print('Converting to float64 and continuing...')
         input_data = input_data.astype(np.float64)
 
-    output = np.zeros(input_data.size, dtype=np.float64, order='C').reshape(
+    output = np.zeros(input_data.size, dtype=output_dtype, order='C').reshape(
                     input_data.shape[1], input_data.shape[0])
 
-    cdef double [:,::1] input_data_view = input_data
-    cdef double [:,::1] output_view = output
-    kernel_2d_perp(input_data_view, output_view, input_data.shape[1], 0, 1,
+    kernel_2d_perp(input_data, output, input_data.shape[1], 0, 1,
                    interpolation=interpolation, inc_sym=1)
     return output
 
@@ -248,8 +246,8 @@ cdef bint if_split(Py_ssize_t start, Py_ssize_t stop, Py_ssize_t half, bint odd)
     else:
         return False
 
-def  one_step_extended_pulse(double [:,:,::1] output, double [:,::1] step, Py_ssize_t full_step_size,
-                         Py_ssize_t x_start_glob, Py_ssize_t x_end_glob, Py_ssize_t leading_interval_start, float factor, bint interpolation):
+def  one_step_extended_pulse(floating [:,:,::1] output, floating2 [:,::1] step, Py_ssize_t full_step_size,
+                         Py_ssize_t x_start_glob, Py_ssize_t x_end_glob, Py_ssize_t leading_interval_start, double factor, bint interpolation):
      cdef Py_ssize_t n, r_len, interval_start, interval_stop
      cdef Py_ssize_t n = output.shape[0] # Number of slices in the beam package.
      cdef Py_ssize_t r_len = step.shape[1] # Full length of the radial data.
