@@ -2,10 +2,16 @@ cimport cython
 import  numpy as np
 from libc.math cimport sqrt
 from cython cimport floating
-from .c_declarations cimport floating2
-from .c_declarations cimport Interval
 from libc.math cimport ceil
 from typing import Tuple
+
+ctypedef struct Interval:
+    Py_ssize_t start
+    Py_ssize_t end
+
+ctypedef fused floating2:
+    float
+    double
 
 
 # cdef inline double d_square(double x): # maybe use instead of x**2, should be faster
