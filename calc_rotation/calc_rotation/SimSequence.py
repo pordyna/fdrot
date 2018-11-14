@@ -1,29 +1,30 @@
-from FilesList import FilesList
+from .sim_data.FilesLists import GenericList
 import numpy as np
-from typing import Union, Tuple, Sequence, MutableSequence, Optional
-from c_rotation import one_step_extended_pulse  # ignore this error somehow
+from typing import Union, Tuple, Sequence, MutableSequence, Optional, Mapping
+from warnings import warn
+from .c_rotation import one_step_extended_pulse  # ignore this error somehow
 
 
 class SimSequence:
     """
 
     """
-    def __init__(self, files: Union[], iteration: Tuple[int, int, int], first_slice: Tuple[int, int],
-                 last_slice: Optional[Tuple[int, int]] = None, full_slice_length: Optional[int] = None) -> None:
+    def __init__(self, files: Union[GenericList, Mapping[str, GenericList]], iteration: Tuple[int, int, int],
+                 full_slice_length: int, first_slice: Tuple[int, int], last_slice: Optional[Tuple[int, int]] = None) -> None:
         """ """
         self.number_of_steps = iteration[2]
         if self.number_of_steps > 1 and last_slice is None:
             raise TypeError('`last_slice`, can\'t be None, if there is more than one iteration in the sequence.')
-        if self.number_of_steps > 2 and full_slice_length is None:
-            raise TypeError('`full_slice_length`, can\'t be None, if there are more than 2 iterations in the sequence.')
         self.first_iteration = iteration[0]
         self.iter_step = iteration[1]
         self.number_of_steps = iteration[2]
         self.first_slice = first_slice
-        self.last_slice = last_slice
+        if last_slice is None:
+            self.last_slice = first_slice
+        else:
+            self.last_slice = last_slice
         self.full_slice_length = full_slice_length
-        self.files_B = files_B
-        self.files_ne = files_ne
+        self.files = files
 
     def step_to_iter(self, step: int) -> int:
         if step < 0 or step >= self.number_of_steps:
@@ -42,7 +43,14 @@ class SimSequence:
             start = stop - self.full_slice_length
             return start, stop
 
-    def get_data(self, steps: Union[int, Sequence[int], str], make_contiguous: bool = True)-> MutableSequence[np.ndarray]:
+    def get_files(self, field: str) -> FilesList:
+        if isinstance(self.files, Mapping):
+            return self.files[field]
+        else:
+            return self.files
+
+    def get_data(self, field: str, steps: Union[int, Sequence[int], str], make_contiguous: bool = True)-> Union[np.ndarray, MutableSequence[np.ndarray]]:
+
         try:
             steps.strip()
         except AttributeError:
@@ -54,26 +62,34 @@ class SimSequence:
             if steps == 'all':
                 steps = range(self.number_of_steps)
             else:
-                raise ValueError('First positional argument has to be an integer, a sequence of integers or \'all\'.')
+                raise ValueError('Second positional argument has to be an integer, a sequence of integers or \'all\'.')
         data = [len(steps)]
         for ii,  step in enumerate(steps):
-            data[ii] = self.files_B.open(self.step_to_iter(step))
-
+            data[ii] = self.get_files(field).open(self.step_to_iter(step), field)
+            # This must be removed when single precision is also supported. Problems with fused types.
+            if data[ii].dtype != np.float64:
+                data[ii] = data[ii].astype(np.float64)
         if make_contiguous:
             for ii, step in enumerate(data):
                 if not  step.flags['C_CONTIGUOUS']:
+                    warn('At least one array was not C_Contiguous.')
                     data[ii] = np.ascontiguousarray(step)
+        if len(data) == 1:
+            return data[0]
         return data
 
-    def rotation_2d_perp(self, pulse_length_in_cells: int) -> np.ndarray:
+    def rotation_2d_perp(self, pulse_length_in_cells: int, interpolation: bool = True) -> np.ndarray:
         #create output:
-        output = np.zeros((self.files_B.sim_box_shape[0] * self.files_B.sim_box_shape[1] *
+        files_Bz = self.get_files('Bz')
+        output = np.zeros((files_Bz.sim_box_shape[0] * files_Bz.sim_box_shape[1] *
                            pulse_length_in_cells), dtype=np.float64)
 
-        output = output.reshape((pulse_length_in_cells, self.files_B.sim_box_shape[1], self.files_B.sim_box_shape[0]))
-
+        output = output.reshape((pulse_length_in_cells, files_Bz.sim_box_shape[1], files_Bz.sim_box_shape[0]))
+        factor = 1 # It should be sth else.
         for step in range(self.number_of_steps):
-            step_data = self.get_data(step)
+            step_data = self.get_data('Bz', step) * self.get_data('n_e', step)
             step_interval = self.get_interval(step)
+            one_step_extended_pulse(output, step_data, self.full_slice_length, self.first_slice[0],
+                                    self.last_slice[1], step_interval[0], factor, interpolation)
+        return output
 
-           #one_step_extended_pulse(step_data, , output)

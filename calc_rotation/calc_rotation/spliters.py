@@ -1,9 +1,7 @@
 import numpy as np
-from FilesList import FilesList
+from sim_data import FilesList
 from SimSequence import SimSequence
-from typing import Union, Iterable, Callable, Tuple, Sequence, MutableSequence, Optional, Any
-from warnings import warn
-from os import path
+
 
 def const_velocity(files: FilesList, vel: float, inc_time: float, start_x: float, end_x: float,
                    iter_step: int = 1, ignore_missing_first_step: bool = False, ignore_missing_last_step: bool = False,
@@ -108,15 +106,15 @@ def const_velocity(files: FilesList, vel: float, inc_time: float, start_x: float
             raise ValueError
 
     slices = [len(steps_ids)]
-    idx_step_length = step_length / files.x_step
-    start_first = int(start_x / files.x_step)
+    idx_step_length = step_length / files.grid_unit
+    start_first = int(start_x / files.grid_unit)
     stop_first = (steps_ids[0] + 1) * idx_step_length
     slices[0] = (start_first, stop_first)
     for ii in range(1, len(slices) - 1):
         prev = slices[ii - 1][1]
         slices[ii] = (prev, prev + idx_step_length)
     start_last = slices[-2][1]
-    end_last = int(end_x / files.x_step) + 1  # last is not included
+    end_last = int(end_x / files.grid_unit) + 1  # last is not included
     slices[-1] = (start_last, end_last)
 
     return SimSequence(slices, steps_ids)
