@@ -12,13 +12,11 @@ ctypedef struct Interval:
 
 # cdef inline double d_square(double x): # maybe use instead of x**2, should be faster
 #   return x*x
-# TODO introduce used types and casting if needed. So that input, output can be of single precision.
+# TODO introduce fused types and casting if needed. So that input, output can be of single precision.
 
 @cython.cdivision(True)
 @cython.boundscheck(False)
 @cython.wraparound(False)
-# TODO add a bint for including symmetric part only for the middle, vertical, line.
-
 cdef int kernel_2d_perp(double [:,::1] input_data, double [:,::1] output_data, Py_ssize_t interval_start,
                          Py_ssize_t interval_stop, double factor=1, bint interpolation=0, bint inc_sym=0,
                         bint inc_sym_only_vertical_middle=0):
@@ -170,10 +168,10 @@ cdef int kernel_2d_perp(double [:,::1] input_data, double [:,::1] output_data, P
                     value_diff_up = value_2_up - value_1_up
                     value_diff_down = value_2_down - value_1_down
 
-                    interpolated_value_up = extra_factor * factor (value_1_up +
+                    interpolated_value_up = extra_factor * factor * (value_1_up +
                                              value_diff_up
                                              * (radius - rr_exact))
-                    interpolated_value_down = extra_factor * factor (value_1_down +
+                    interpolated_value_down = extra_factor * factor * (value_1_down +
                                                value_diff_down
                                                * (radius - rr_exact))
                 # Add to the integrals.
@@ -215,28 +213,28 @@ def rotation_static_2d(np.ndarray input_data, interpolation=False):
                    interpolation=interpolation, inc_sym=1)
     return output
 
-cdef Interval exc = [0,0]
 
-cdef Interval translator(Py_ssize_t start, Py_ssize_t stop, Py_ssize_t half, bint odd) except *: # expect
+
+cdef int translator(Py_ssize_t start, Py_ssize_t stop, Py_ssize_t half, bint odd, Interval* p_converted) except-1 :
     """ start and stop : 0 ist the first one
     """
     if start == stop:
         raise ValueError("Interval must be longer than 0")
 
     cdef Py_ssize_t modifier
+
     if odd:
-         modifier = 1
+        modifier = 1
     else:
-         modifier = 0
-    cdef Interval converted
+        modifier = 0
     if start < half + modifier and stop <= half + modifier:
-         converted.start = half - start + modifier
-         converted.stop = half - stop + modifier
-         return converted
+        p_converted[0].start = half - start + modifier
+        p_converted[0].stop = half - stop + modifier
+        return 0
     if start >= half  and stop > half:
-         converted.start = stop - half + 1
-         converted.stop = start - half + 1
-         return converted
+        p_converted[0].start = stop - half + 1
+        p_converted[0].stop = start - half + 1
+        return 0
     else:
         raise ValueError("Interval goes over the middle point. You have to split it first.")
 
@@ -254,46 +252,47 @@ cdef bint if_split(Py_ssize_t start, Py_ssize_t stop, Py_ssize_t half, bint odd)
     else:
         return False
 
-def  one_step_extended_pulse(double[:,:,::1] output, double[:,::1] step, Py_ssize_t full_step_size,
-                         Py_ssize_t x_start_glob, Py_ssize_t x_end_glob, Py_ssize_t leading_interval_start, double factor, bint interpolation):
-     cdef Py_ssize_t n, r_len, interval_start, interval_stop, nn
-     n = output.shape[0] # Number of slices in the beam package.
-     r_len = step.shape[1] # Full length of the radial data.
-     cdef Py_ssize_t half = r_len // 2
-     # Check, if radial data is of an odd length.
-     cdef bint odd = 0
-     if r_len%2 !=2:
-        odd = True
-     # Iterations over the sliced mask for the X-Ray beam.
-     cdef Interval current_interval
-     for nn in range(n):
-         interval_start = leading_interval_start - nn
-         # we can't just take "interval_end -nn", because the last interval can be trimmed.
-         interval_stop = interval_start + full_step_size - nn
-         # keep interval inside the global boundaries.
-         if interval_start < x_start_glob:
-             interval_start = x_start_glob
-         if interval_stop > x_end_glob:
-             interval_stop = x_end_glob
-         # skip a slice, if it's  not included in this time step.
-         # That could happen, if the pulse is not yet, or not anymore, completely inside the simulation box (target).
-         if interval_stop <= interval_start:
-             continue
-         # Calculating rotation for the current slice in the current step.
-         # The Kernel is designed for integration over the left part of the cylinder, or it's parts.
-         # The  symmetry allows us to use it for the Right side as well.
-         # If the step covers a part of both the left and the right side, it has to be split.
-         # Coordinates in the kernel are defined differently than the starting and endpoints here, so they have
-         # to be converted and eventually mirrored, if the interval is on the right side.
-         if if_split(interval_start, interval_stop, half, odd):
-            current_interval = translator(interval_start, half, half, odd)
-            kernel_2d_perp(step, output[nn,:,:] ,current_interval.start, current_interval.stop,
-                           factor=factor, interpolation=interpolation, inc_sym=0, inc_sym_only_vertical_middle=1)
-            current_interval = translator(half, interval_stop, half, odd)
-            kernel_2d_perp(step, output[nn,:,:], current_interval.start, current_interval.stop,
-                           factor=factor, interpolation=interpolation, inc_sym=0, inc_sym_only_vertical_middle=1)
-         else:
-            current_interval = translator(interval_start, interval_stop, half, odd)
-            kernel_2d_perp(step, output[nn,:,:], current_interval.start, current_interval.stop,
-                           factor=factor, interpolation=interpolation, inc_sym=0, inc_sym_only_vertical_middle=1)
-
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def  one_step_extended_pulse(double[:,:,::1] output, double[:,::1] step,
+                         Py_ssize_t x_start_glob, Py_ssize_t x_end_glob, Py_ssize_t leading_interval_start, Py_ssize_t leading_interval_end, double factor, bint interpolation):
+    cdef Py_ssize_t n, r_len, interval_start, interval_stop, nn
+    n = output.shape[0] # Number of slices in the beam package.
+    r_len = step.shape[1] # Full length of the radial data.
+    cdef Py_ssize_t half = r_len // 2
+    # Check, if radial data is of an odd length.
+    cdef bint odd = 0
+    if r_len%2 !=2:
+       odd = True
+    # Iterations over the sliced mask for the X-Ray beam.
+    cdef Interval current_interval
+    for nn in range(n):
+        interval_start = leading_interval_start - nn
+       # we can't just take "interval_end -nn", because the last interval can be trimmed.
+        interval_stop = leading_interval_end - nn
+        # keep interval inside the global boundaries.
+        if interval_start < x_start_glob:
+            interval_start = x_start_glob
+        if interval_stop > x_end_glob:
+            interval_stop = x_end_glob
+        # skip a slice, if it's  not included in this time step.
+        # That could happen, if the pulse is not yet, or not anymore, completely inside the simulation box (target).
+        if interval_stop <= interval_start:
+            continue
+        # Calculating rotation for the current slice in the current step.
+        # The Kernel is designed for integration over the left part of the cylinder, or it's parts.
+        # The  symmetry allows us to use it for the Right side as well.
+        # If the step covers a part of both the left and the right side, it has to be split.
+        # Coordinates in the kernel are defined differently than the starting and endpoints here, so they have
+        # to be converted and eventually mirrored, if the interval is on the right side.
+        if if_split(interval_start, interval_stop, half, odd):
+           translator(interval_start, half, half, odd, &current_interval)
+           kernel_2d_perp(step, output[nn,:,:] ,current_interval.start, current_interval.stop,
+                          factor=factor, interpolation=interpolation, inc_sym=0, inc_sym_only_vertical_middle=1)
+           translator(half, interval_stop, half, odd, &current_interval)
+           kernel_2d_perp(step, output[nn,:,:], current_interval.start, current_interval.stop,
+                          factor=factor, interpolation=interpolation, inc_sym=0, inc_sym_only_vertical_middle=1)
+        else:
+           translator(interval_start, interval_stop, half, odd, &current_interval)
+           kernel_2d_perp(step, output[nn,:,:], current_interval.start, current_interval.stop,
+                          factor=factor, interpolation=interpolation, inc_sym=0, inc_sym_only_vertical_middle=1)

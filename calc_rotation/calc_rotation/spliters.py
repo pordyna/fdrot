@@ -1,120 +1,55 @@
-import numpy as np
-from sim_data import FilesList
-from SimSequence import SimSequence
+from scipy.constants import speed_of_light
 
 
-def const_velocity(files: FilesList, vel: float, inc_time: float, start_x: float, end_x: float,
-                   iter_step: int = 1, ignore_missing_first_step: bool = False, ignore_missing_last_step: bool = False,
-                   tail_cut_threshold: float = 1e-4) -> SimSequence:
-    """ determines the proper sequence from ..., loads the files_B to the memory and returns a SimSequence object."""
+# this is wrong:
+def cell_at_step_end(step, single_step, grid_unit, inc_time, start):
+    time_at_step_end = (step + 0.5) * single_step
+    prop_time_from_start = time_at_step_end - inc_time
+    number_of_prop_cells = (prop_time_from_start * speed_of_light) / grid_unit
+    number_of_prop_cells = int(round(number_of_prop_cells))
+    end_of_the_slice = start + number_of_prop_cells
+    return end_of_the_slice
 
-    # adapting the time resolution:
-    if iter_step != 1 and iter_step % 2 != 0 or iter_step < 1:
-        raise ValueError('`iter_step` hast to be an even integer or one, and it cant be negative or 0')
-    single_time_step = files.single_time_step * iter_step
-    # get the first time step to use:
-    length = end_x - start_x
-    prop_time = length / vel
-    step_length = vel * single_time_step
-    first_step = int(round(inc_time / single_time_step))
-    # part of a single time step, which is preceding the "1 + the first step".
-    front_tail = 0.5 - (first_step - inc_time / single_time_step)
-    whole_steps = int((prop_time - front_tail * single_time_step) / single_time_step)
-    end_tail = (prop_time - front_tail * single_time_step) % single_time_step
-    last_step = first_step + whole_steps + 1
-    # first and/or last step omission for very short tails
-    omitting_front = False
-    omitting_end = False
-    if front_tail < tail_cut_threshold:
-        first_step = first_step + 1
-        omitting_front = True
-    if end_tail < tail_cut_threshold:
-        last_step = last_step - 1
-        omitting_end = True
 
-    max_id = files.ids[-1]  # it is always sorted in an ascending order.
-    min_id = files.ids[0]
+def cells_perp(start, end, inc_time, iter_step, beam_length_cells, iteration_dt, grid_unit):
+    # steps in time and slices in length.
+    # the X-Ray comes also in slices,
+    # Let's calculate the simulation box slices for the first X-Ray slice.
+    # Slices are full, not trimmed by the global start and end points.
+    # Let's find the first needed slice first.
+    single_step = iteration_dt * iter_step
+    first_step = int(round(inc_time / single_step))
+    #  offset from the first step middle point
+    #offset = inc_time / single_step - first_step
+    #time_progress_in_first_step = (0.5 + offset)* single_step
+    #time_at_1_step_start = inc_time - time_progress_in_first_step
+    #cell_at_1_step_start = start - int(round(( time_progress_in_first_step * speed_of_light) / grid_unit))
 
-    steps = np.arange(first_step, last_step + 1, dtype=np.uint16)
-    if iter_step == 1:
-        steps_ids = steps
-    else:
-        steps_ids = steps * iter_step + iter_step / 2
+    # Now the last step:
+    # Cell in there the first X-Ray slice is, when the last X-Ray slice is at the end.
+    stop = end + (beam_length_cells - 1)
+    propagation_time = (stop - start) * grid_unit / speed_of_light
+    last_step = int(round((inc_time + propagation_time)/single_step))
+    # Let's fill the slices. End of a slice should be always the start of the next one.
+    # When the 0 step is included we get negative time and negative start.
+    # That's how it should be. In the end we cut it at start anyway.
+    number_of_steps = last_step - first_step + 1
+    slices = [None] * number_of_steps
+    slice_start = cell_at_step_end(first_step - 1, single_step, grid_unit, inc_time, start)
+    for ii, step in enumerate(range(first_step, last_step + 1)):
+        slice_end = cell_at_step_end(step, single_step, grid_unit, inc_time, start) + 1
+        slices[ii] = (slice_start, slice_end)
+        slice_start = slice_end
 
-    # check for another missing steps:
-    for step_id in steps_ids:
-        missing = []
-        if step_id not in files.ids:
-            missing.append(step_id)
-        if not missing:
-            print('Following time steps are needed for this Sequence, but not listed in files_B.ids.')
-            print(missing)
-            raise ValueError()
+    # No convert steps to iterations.
+    first_iteration = first_step * iter_step
+    number_of_iterations = number_of_steps * iter_step
+    iterations = (first_iteration, iter_step, number_of_steps)
 
-    # Check if the first, or the last step is missing. only for iter_step = 1
-    #  First step:
-    if iter_step == 1:
-        if first_step < min_id:
-            if first_step < min_id - 1:
-                raise ValueError('More than one step, at the the beginning of the sequence, is not available.'
-                                 ' Try increasing the x-ray delay, or provide the missing data.')
-            elif not ignore_missing_first_step:
-                if omitting_front:
-                    missing = step_length + front_tail * step_length
-                else:
-                    missing = front_tail * step_length
-                raise ValueError('First step in the sequence is not available.  {:.3f} microns are not covered by data.'
-                                 ' The propagation length in  a single time step is'
-                                 ' {:.3f} microns, so {:2.2}% are missing. Run again with `ignore_missing_first_step` set to True'
-                                 ' to use the first available time step instead the missing data.'
-                                 .format(missing, step_length, missing / step_length * 100))
-            else:
-                steps_ids = steps_ids[1:]
-        else:
-            ignore_missing_first_step = False
-            # It's for flow control. If user sets it to True, but it's not needed, this sets it back to False.
-        # Last step:
-        if last_step > max_id:
-            if last_step > max_id - 1:
-                raise ValueError('More than one step, at the the end of the sequence, is not available.'
-                                 ' Try reducing the x-ray delay, or provide the missing data.')
+    return iterations, slices, start, end
 
-            elif not ignore_missing_last_step:
-                if omitting_end:
-                    missing = end_tail * step_length + step_length
-                else:
-                    missing = end_tail * step_length
-                raise ValueError('Last step in the sequence is not available. The propagation length exceeds the length'
-                                 ' covered by data by {:.3f} microns. The propagation length in a single time step is'
-                                 ' {:.3f} microns, so {:2.2}% are missing. Run again with `ignore_missing_last_step` set to True'
-                                 ' to use the last available time step instead the missing data.'
-                                 .format(missing, step_length, missing / step_length * 100))
-            else:
-                steps_ids = steps_ids[:-1]
-        else:
-            ignore_missing_first_step = False
-            # It's for flow control. If user sets it to True, but it's not needed, this sets it back to False.
 
-    # check for (another) missing steps:
-    for step_id in steps_ids:
-        missing = []
-        if step_id not in files.ids:
-            missing.append(step_id)
-        if not missing:
-            print('Following time steps are needed for this Sequence, but not listed in files_B.ids.')
-            print(missing)
-            raise ValueError
-
-    slices = [len(steps_ids)]
-    idx_step_length = step_length / files.grid_unit
-    start_first = int(start_x / files.grid_unit)
-    stop_first = (steps_ids[0] + 1) * idx_step_length
-    slices[0] = (start_first, stop_first)
-    for ii in range(1, len(slices) - 1):
-        prev = slices[ii - 1][1]
-        slices[ii] = (prev, prev + idx_step_length)
-    start_last = slices[-2][1]
-    end_last = int(end_x / files.grid_unit) + 1  # last is not included
-    slices[-1] = (start_last, end_last)
-
-    return SimSequence(slices, steps_ids)
+def micron_perp(start, end, inc_time, iter_step, beam_length_cells, iteration_dt, grid_unit):
+    start_cells = int(round(start / grid_unit))
+    end_cells = int(round(end / grid_unit))
+    return cells_perp(start_cells, end_cells, inc_time, iter_step, beam_length_cells, iteration_dt, grid_unit)
