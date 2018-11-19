@@ -79,18 +79,20 @@ class SimSequence:
             return data[0]
         return data
 
-    def rotation_2d_perp(self, interpolation: bool = True) -> np.ndarray:
+    def rotation_2d_perp(self, pulse: np.ndarray, interpolation: bool = True) -> np.ndarray:
+        if pulse.size != self.pulse_length_cells:
+            raise ValueError("...")
         # create output:
         files_bz = self.get_files('Bz')
-        output = np.zeros((files_bz.sim_box_shape[0] * files_bz.sim_box_shape[1] *
-                           self.pulse_length_cells), dtype=np.float64)
 
-        output = output.reshape((self.pulse_length_cells, files_bz.sim_box_shape[1], files_bz.sim_box_shape[0]))
+        output = np.zeros((files_bz.sim_box_shape[0] * files_bz.sim_box_shape[1]), dtype=np.float64)
+
+        output = output.reshape((files_bz.sim_box_shape[1], files_bz.sim_box_shape[0]))
         factor = 1 # It should be sth else.
         for step in range(self.number_of_steps):
             step_data = self.get_data('Bz', step) * self.get_data('n_e', step)
             step_interval = self.slices[step]
-            one_step_extended_pulse(output, step_data, self.global_start, self.global_end, step_interval[0],
+            one_step_extended_pulse(output, step_data, pulse, self.global_start, self.global_end, step_interval[0],
                                     step_interval[1], factor, interpolation)
         return output
 
