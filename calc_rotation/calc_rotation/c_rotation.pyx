@@ -357,7 +357,6 @@ def  new_one_step_extended_pulse(double [:,::1] output, double[:,::1] step, doub
     cdef double weighted_factor
     for nn in range(n):
         interval_start = leading_interval_start - nn
-       # we can't just take "interval_end -nn", because the last interval can be trimmed.
         interval_stop = leading_interval_end - nn
         # keep interval inside the global boundaries.
         if interval_start < x_start_glob:

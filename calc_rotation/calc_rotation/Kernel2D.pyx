@@ -1,5 +1,4 @@
 from libc.math cimport sqrt
-from libc.math cimport abs
 from cython.view cimport array as cvarray
 # from .c_rotation cimport Interval
 
@@ -16,6 +15,15 @@ cdef inline double sum_arr(cython.floating [::1] arr):
     cdef ssize_t ii
     for ii in range(arr.shape[0]):
         sum+= arr[ii]
+    return sum
+
+ctypedef enum UpDown:
+    up = 0
+    down = 1
+
+ctypedef enum Side:
+    left = 0
+    right = 1
 
 cdef struct EvenOddControls:
     Py_ssize_t offset
@@ -42,9 +50,11 @@ cdef class Kernel2D:
         double [::1] pulse
         Py_ssize_t pulse_len
         Py_ssize_t pulse_step
-        double [::1] x_line
+        double [:,::1] x_line
+        Interval global_interval
 
-    def __cinit__(self, double [:, ::1] input_d, double [:, ::1] output_d, double [::1] pulse , Py_ssize_t pulse_step=1,
+    def __cinit__(self, double [:, ::1] input_d, double [:, ::1] output_d, double [::1] pulse , double factor,
+                  Py_ssize_t global_start, Py_ssize_t global_end, Py_ssize_t pulse_step=1,
                   bint interpolation=0, bint inc_sym=0, bint inc_sym_only_vertical_middle=0, bint add=1):
 
         self.input_d = input_d
@@ -53,9 +63,12 @@ cdef class Kernel2D:
         self.inc_sym = inc_sym
         self.inc_sym_only_vertical_middle = inc_sym_only_vertical_middle
         self.add = add
-
+        self.factor = factor
         self.r_len = input_d.shape[1]
         self.s_len = input_d.shape[0]
+
+        self.global_interval.start = global_start
+        self.global_interval.stop =  global_end
 
         assert self.r_len == output_d.shape[0]
         assert self.s_len == output_d.shape[1]
@@ -63,7 +76,7 @@ cdef class Kernel2D:
         self.r_len_half = self.r_len // 2
 
         if self.r_len%2 == 0:
-            self._odd = 0
+            self._odd = False
             self.controls.offset = 1
             self.controls.write_offset = 1
             self.controls.y_loop_start =  0
@@ -71,7 +84,7 @@ cdef class Kernel2D:
             self.controls.x_offset = - 0.5
             self.controls.y_offset = 0.5
         else:
-            self._odd = 1
+            self._odd = True
             self.controls.offset = 0
             self.controls.write_offset = 0
             self.controls.y_loop_start =  1
@@ -83,7 +96,7 @@ cdef class Kernel2D:
         self.pulse = pulse
         self.pulse_len = pulse.shape[0]
         self.pulse_step = pulse_step
-        self.x_line = cvarray(shape=(self.r_len,), itemsize=sizeof(double), format="d")
+        self.x_line = cvarray(shape=(2, self.r_len), itemsize=sizeof(double), format="d")
 
 
     cdef double _interpolate_up(self, Py_ssize_t zz, Py_ssize_t rr, double radius):
@@ -166,14 +179,49 @@ cdef class Kernel2D:
         self._x_loop(yy, x_start, interval.stop, output)
 
 
-    cdef rotate_slice(self, Py_ssize_t leading_start, Py_ssize_t leading_stop, bint left):
+    cdef double _sum_line_over_pulse(self, Py_ssize_t leading_start, Py_ssize_t leading_stop, UpDown up_down):
+        cdef double summed_over_pulse = 0
+        cdef Interval slice_interval
+        cdef ssize_t nn
+        cdef double [::1] line = self.x_line[<ssize_t>up_down, :]
+        for nn in range(self.pulse_len):
+                # nn = 0 : incoming slice
+                # nn = pulse_len -1 : tail slice
+                slice_interval.start = leading_start - nn
+                slice_interval.stop = leading_stop - nn
+                # keep interval inside the global boundaries.
+                if slice_interval.start < self.global_interval.start:
+                    slice_interval.start = self.global_interval.start
+                if slice_interval.stop > self.global_interval.stop:
+                    slice_interval.stop = self.global_interval.stop
+                # skip a slice, if it's  not included in this time step.
+                # That could happen, if the pulse is not yet, or not anymore, completely inside the simulation box (target).
+                if slice_interval.start <= slice_interval.stop:
+                    continue
+                pulse_idx = self.pulse_len - nn - 1
+                summed_over_pulse += (self.pulse[pulse_idx]
+                                      * sum_arr(line[slice_interval.start:slice_interval.stop]))
+        return summed_over_pulse
+
+
+    cdef _write_out(self, Py_ssize_t zz, Py_ssize_t yy, double summed_line, UpDown up_down):
+        if self.add and up_down == up:
+            self.output_d[self.r_len_half - self.controls.write_offset -yy, self.s_len - 1 - zz] += self.factor * summed_line
+        if self.add and up_down == down:
+            self.output_d[self.r_len_half +  yy,  self.s_len - 1 - zz]  += <double>self.factor * summed_line
+        if not self.add and up_down == up:
+            self.output_d[self.r_len_half - self.controls.write_offset -yy, self.s_len - 1 - zz] = self.factor * summed_line
+        if not self.add and up_down == down:
+            self.output_d[self.r_len_half +  yy,  self.s_len - 1 - zz]  = <double>self.factor * summed_line
+
+
+    cdef rotate_slice(self, Py_ssize_t leading_start, Py_ssize_t leading_stop):
         cdef Interval first_interval
         cdef Interval second_interval
-        cdef total_start
-
-        cdef enum side:
-            left = 0
-            right = 1
+        cdef Py_ssize_t total_start
+        cdef double summed_up
+        cdef double summed_down
+        cdef Side side
 
         total_start = leading_start - self.pulse_len
         cdef bint split = self.if_split(total_start, leading_stop)
@@ -183,20 +231,18 @@ cdef class Kernel2D:
         else:
             side = self.translator(total_start, leading_stop, &first_interval)
 
-        cdef Py_ssize_t zz, yy, pp
-        cdef Py_ssize_t n_slices
-        cdef Py_ssize_t pulse_idx
-        cdef Py_ssize_t a, b
-        cdef double summed_over_pulse
+        cdef Py_ssize_t zz, yy
         for zz in range(self.s_len):
             for yy in range(self.controls.y_loop_start, self.r_len_half + self.controls.y_loop_start):
                 if split:
-                    self._inside_y_loop(yy, first_interval, self.x_line[0:self.r_len_half])
-                    self._inside_y_loop(yy, second_interval, self.x_line[self.r_len_half:0:-1])
+                    self._inside_y_loop(yy, first_interval, self.x_line[:, self.r_len_half - self.controls.offset ::-1])
+                    self._inside_y_loop(yy, second_interval, self.x_line[:, self.r_len_half::1])
                 else:
                     if side is left:
-                        self._inside_y_loop(yy, first_interval, self.x_line[0:self.r_len_half])
+                        self._inside_y_loop(yy, first_interval, self.x_line[:, self.r_len_half - self.controls.offset ::-1])
                     if side is right:
-                        self._inside_y_loop(yy, first_interval, self.x_line[self.r_len_half:0:-1])
+                        self._inside_y_loop(yy, first_interval, self.x_line[:, self.r_len_half::1])
+                summed_up = self._sum_line_over_pulse(leading_start, leading_stop, up)
+                summed_down = self._sum_line_over_pulse(leading_start, leading_stop, down)
 
 
