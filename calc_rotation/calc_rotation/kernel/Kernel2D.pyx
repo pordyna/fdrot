@@ -1,59 +1,21 @@
+# cython: language_level=3
+
+
 from libc.math cimport sqrt
 from cython.view cimport array as cvarray
 cimport cython
 
-# from .c_rotation cimport Interval
-
-ctypedef struct Interval:
-    Py_ssize_t start
-    Py_ssize_t stop
-
-@cython.profile(False)
-cdef inline double d_square(double x): # maybe use instead of x**2, should be faster
-    return x*x
+from  .c_defs cimport *
 
 cdef inline double sum_arr(cython.floating [::1] arr):
-    cdef double sum = 0
+    cdef double sum_d = 0
     cdef ssize_t ii
     for ii in range(arr.shape[0]):
-        sum+= arr[ii]
-    return sum
+        sum_d+= arr[ii]
+    return sum_d
 
-ctypedef enum UpDown:
-    up = 0
-    down = 1
-
-ctypedef enum Side:
-    left = 0
-    right = 1
-
-cdef struct EvenOddControls:
-    Py_ssize_t offset
-    Py_ssize_t write_offset
-    Py_ssize_t y_loop_start
-    float r_offset
-    float x_offset
-    float y_offset
 
 cdef class Kernel2D:
-    cdef:
-        double [:, ::1] input_d
-        double [:, ::1] output_d
-        bint interpolation
-        bint inc_sym
-        bint inc_sym_only_vertical_middle
-        bint add # here?
-        bint _odd
-        Py_ssize_t r_len
-        Py_ssize_t s_len
-        Py_ssize_t r_len_half
-        double factor
-        EvenOddControls controls
-        double [::1] pulse
-        Py_ssize_t pulse_len
-        Py_ssize_t pulse_step
-        double [:,::1] x_line
-        Interval global_interval
 
     def __cinit__(self, double [:, ::1] input_d, double [:, ::1] output_d, double [::1] pulse , double factor,
                   Py_ssize_t global_start, Py_ssize_t global_end, Py_ssize_t pulse_step=1,
@@ -91,7 +53,7 @@ cdef class Kernel2D:
             self.controls.write_offset = 0
             self.controls.y_loop_start =  1
             self.controls.r_offset = 0
-            self.controls.x_offset = 0
+            self.controls.x_offset = -1 # changed from 0 to -1, I think it should be that way
             self.controls.y_offset = 0
 
         # Pulse:
@@ -142,11 +104,11 @@ cdef class Kernel2D:
         if start < self.r_len_half + modifier and stop <= self.r_len_half + modifier:
             p_converted[0].start = self.r_len_half - start + modifier
             p_converted[0].stop = self.r_len_half - stop + modifier
-            return 0
+            return 0 # has to be in Side
         if start >= self.r_len_half  and stop > self.r_len_half:
             p_converted[0].start = stop - self.r_len_half + 1
             p_converted[0].stop = start -self. r_len_half + 1
-            return 1
+            return 1 # has to be in Side
         else:
             raise ValueError("Interval goes over the middle point. You have to split it first.")
 
@@ -169,6 +131,17 @@ cdef class Kernel2D:
         cdef Py_ssize_t xx, rr
         cdef double radius
         cdef double val_up, val_down
+
+        if self._odd and x_stop == 0:
+            x_stop = 1
+            radius = sqrt(d_square(yy) + d_square(0.25))
+            rr = int(radius)
+            val_up = self._interpolate_up(zz, rr, radius) * (yy + self.controls.y_offset) / radius
+            self.x_line[0, 0] = val_up
+            if incl_down:
+                val_down = self._interpolate_down(zz, rr, radius) * (yy + self.controls.y_offset) / radius
+                self.x_line[1, 0] = val_down
+
         for xx in range(x_start, x_stop, -1):
             radius = sqrt(d_square(yy + self.controls.y_offset) + d_square(xx + self.controls.x_offset))
             rr = int(radius)
