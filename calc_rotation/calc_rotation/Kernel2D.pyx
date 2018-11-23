@@ -1,11 +1,13 @@
 from libc.math cimport sqrt
 from cython.view cimport array as cvarray
+cimport cython
+
 # from .c_rotation cimport Interval
 
 ctypedef struct Interval:
     Py_ssize_t start
     Py_ssize_t stop
-cimport cython
+
 @cython.profile(False)
 cdef inline double d_square(double x): # maybe use instead of x**2, should be faster
     return x*x
@@ -104,7 +106,7 @@ cdef class Kernel2D:
         cdef double value_diff
 
         value_1 = self.input_d[zz, self.r_len_half + rr]
-        if not self.interpolation:
+        if not self.interpolation or rr == self.r_len_half - 1:
             return value_1
 
         value_2 = self.input_d[zz, self.r_len_half + rr +1]
@@ -117,7 +119,7 @@ cdef class Kernel2D:
         cdef double value_diff
 
         value_1 = self.input_d[zz, self.r_len_half - self.controls.offset + rr]
-        if not self.interpolation:
+        if not self.interpolation or rr == self.r_len_half - 1:
             return value_1
 
         value_2 = self.input_d[zz, self.r_len_half  - self.controls.offset + rr +1]
@@ -162,21 +164,28 @@ cdef class Kernel2D:
             return False
 
 
-    cdef _x_loop(self, Py_ssize_t yy, Py_ssize_t x_start , Py_ssize_t x_stop, double [:] output):
+    cdef _x_loop(self, Py_ssize_t zz, Py_ssize_t yy,
+                 Py_ssize_t x_start , Py_ssize_t x_stop, double [:,:] output, bint incl_down=True):
         cdef Py_ssize_t xx, rr
         cdef double radius
+        cdef double val_up, val_down
         for xx in range(x_start, x_stop, -1):
             radius = sqrt(d_square(yy + self.controls.y_offset) + d_square(xx + self.controls.x_offset))
             rr = int(radius)
+            val_up = self._interpolate_up(zz, rr, radius) * (yy + self.controls.y_offset) / radius
+            self.x_line[0, xx] = val_up
+            if incl_down:
+                val_down = self._interpolate_down(zz, rr, radius) * (yy + self.controls.y_offset) / radius
+                self.x_line[1, xx] = val_down
 
 
-    cdef _inside_y_loop (self, Py_ssize_t yy , Interval interval,  double [:] output):
+    cdef _inside_y_loop (self, Py_ssize_t zz, Py_ssize_t yy ,  Interval interval,  double [:,:] output):
         cdef x_start
         if self.r_len_half - yy <= interval.start:
             x_start  = self.r_len_half - yy
         else:
             x_start = interval.start
-        self._x_loop(yy, x_start, interval.stop, output)
+        self._x_loop(zz, yy, x_start, interval.stop, output)
 
 
     cdef double _sum_line_over_pulse(self, Py_ssize_t leading_start, Py_ssize_t leading_stop, UpDown up_down):
@@ -208,20 +217,21 @@ cdef class Kernel2D:
         if self.add and up_down == up:
             self.output_d[self.r_len_half - self.controls.write_offset -yy, self.s_len - 1 - zz] += self.factor * summed_line
         if self.add and up_down == down:
-            self.output_d[self.r_len_half +  yy,  self.s_len - 1 - zz]  += <double>self.factor * summed_line
+            self.output_d[self.r_len_half +  yy,  self.s_len - 1 - zz]  += self.factor * summed_line
         if not self.add and up_down == up:
             self.output_d[self.r_len_half - self.controls.write_offset -yy, self.s_len - 1 - zz] = self.factor * summed_line
         if not self.add and up_down == down:
-            self.output_d[self.r_len_half +  yy,  self.s_len - 1 - zz]  = <double>self.factor * summed_line
+            self.output_d[self.r_len_half +  yy,  self.s_len - 1 - zz]  = self.factor * summed_line
 
 
-    cdef rotate_slice(self, Py_ssize_t leading_start, Py_ssize_t leading_stop):
+    cpdef rotate_slice(self, Py_ssize_t leading_start, Py_ssize_t leading_stop):
         cdef Interval first_interval
         cdef Interval second_interval
         cdef Py_ssize_t total_start
         cdef double summed_up
         cdef double summed_down
         cdef Side side
+        cdef float save
 
         total_start = leading_start - self.pulse_len
         cdef bint split = self.if_split(total_start, leading_stop)
@@ -229,20 +239,39 @@ cdef class Kernel2D:
             self.translator(total_start, self.r_len_half, &first_interval)
             self.translator(self.r_len_half, leading_stop, &second_interval)
         else:
-            side = self.translator(total_start, leading_stop, &first_interval)
+            side = <Side>self.translator(total_start, leading_stop, &first_interval)
 
-        cdef Py_ssize_t zz, yy
+        cpdef Py_ssize_t zz, yy
         for zz in range(self.s_len):
             for yy in range(self.controls.y_loop_start, self.r_len_half + self.controls.y_loop_start):
                 if split:
-                    self._inside_y_loop(yy, first_interval, self.x_line[:, self.r_len_half - self.controls.offset ::-1])
-                    self._inside_y_loop(yy, second_interval, self.x_line[:, self.r_len_half::1])
+                    self._inside_y_loop(zz, yy,  first_interval, self.x_line[:, self.r_len_half - self.controls.offset ::-1])
+                    self._inside_y_loop(zz, yy, second_interval, self.x_line[:, self.r_len_half::1])
                 else:
                     if side is left:
-                        self._inside_y_loop(yy, first_interval, self.x_line[:, self.r_len_half - self.controls.offset ::-1])
+                        self._inside_y_loop(zz, yy, first_interval, self.x_line[:, self.r_len_half - self.controls.offset ::-1])
                     if side is right:
-                        self._inside_y_loop(yy, first_interval, self.x_line[:, self.r_len_half::1])
+                        self._inside_y_loop(zz, yy, first_interval, self.x_line[:, self.r_len_half::1])
                 summed_up = self._sum_line_over_pulse(leading_start, leading_stop, up)
                 summed_down = self._sum_line_over_pulse(leading_start, leading_stop, down)
+                self._write_out(zz, yy, summed_up, up)
+                self._write_out(zz, yy, summed_down, down)
 
-
+            if self._odd:
+                save = self.controls.y_offset
+                self.controls.y_offset = 0.25
+                if split:
+                    self._x_loop(zz, 0,  first_interval.start, first_interval.stop,
+                                 self.x_line[:, self.r_len_half - self.controls.offset ::-1], incl_down=False)
+                    self._x_loop(zz, 0, first_interval.start, first_interval.stop,
+                                 self.x_line[:, self.r_len_half::1], incl_down=False)
+                else:
+                    if side is left:
+                        self._x_loop(zz, 0, first_interval.start, first_interval.stop,
+                                     self.x_line[:, self.r_len_half - self.controls.offset ::-1], incl_down=False)
+                    if side is right:
+                        self._x_loop(zz, 0, first_interval.start, first_interval.stop,
+                                            self.x_line[:, self.r_len_half::1], incl_down=False)
+                self.controls.y_offset = save
+                summed = self._sum_line_over_pulse(leading_start, leading_stop, up)
+                self._write_out(zz, 0, summed, up)
