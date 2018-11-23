@@ -28,6 +28,7 @@ class SimSequence:
     def step_to_iter(self, step: int) -> int:
         if step < 0 or step >= self.number_of_steps:
             raise ValueError("`step` is out of scope.")
+
         return self.first_iteration + step * self.iter_step
 
     def get_files(self, field: str) -> GenericList:
