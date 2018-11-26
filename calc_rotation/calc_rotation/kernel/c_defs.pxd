@@ -4,7 +4,7 @@ ctypedef struct Interval:
     Py_ssize_t start
     Py_ssize_t stop
 
-cdef inline double d_square(double x): # maybe use instead of x**2, should be faster
+cdef inline double d_square(double x):
     return x*x
 
 ctypedef enum UpDown:
