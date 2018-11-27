@@ -3,7 +3,7 @@ from typing import Union, Callable, Tuple, Sequence, Optional
 import re
 import os
 
-from ..FilesLists import GenericList
+from . import GenericList
 
 
 class UniversalSingle(GenericList):
