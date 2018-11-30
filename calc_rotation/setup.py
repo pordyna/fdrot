@@ -3,8 +3,7 @@ from setuptools.extension import Extension
 from Cython.Build import cythonize
 
 
-extensions = [Extension('fdrot.c_rotation', ['fdrot/c_rotation.pyx']),
-                        Extension('fdrot.Kernel2D', ['fdrot/Kernel2D.pyx'])]
+extensions = [Extension('fdrot.Kernel2D', ['fdrot/Kernel2D.pyx'])]
                          # ,define_macros=[('CYTHON_TRACE', '1')])]
 setup(name='Fdrot',
       ext_modules=cythonize(extensions, annotate=True, gdb_debug=False,
