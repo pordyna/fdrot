@@ -1,3 +1,6 @@
+"""UniversalSingle.py
+This file is a part of the Fdrot package.
+"""
 import numpy as np
 from typing import Union, Callable, Tuple, Sequence, Optional
 import re
@@ -7,37 +10,55 @@ from . import GenericList
 
 
 class UniversalSingle(GenericList):
-    """
+    """An universal file index  for the simulation data.
+
+    It works with field data, if all files are in the same directory and the file names differ only
+    in the iteration number.
+
+        Attributes:
+            single_time_step: Duration of one iteration.
+            ids: Available iterations.
+            grid_unit: Length of one cell in a simulation. (dx)
+            sim_box_shape: The shape of the simulation box.
+            data_stored: Fields accessible through this index. Stored as string keys (exp. ['Bz', n_e']).
+            path: Path to the directory with the files.
+            name_front: The constant part of a filename, before the iteration number.
+            name_end:  The constant part of a filename  after the number (incl. file extension).
+
 
     """
     def __init__(self, path: str, data_stored: str, single_time_step: float, grid_unit: float,
                  name_front: str, name_end: str, export_func: Callable[[str, int], np.ndarray], ids: Optional[Sequence[int]] = None,
                  sim_box_shape: Optional[Tuple[int, int]] = None) -> None:
+        """ Initializes UniversalSingle object.
+
+        If available iterations are not specified, they are obtained from file names.
         """
-        """
-        # TODO move descriptions to the class doc_string.
-        self.path = path  # path to files_B
-        self.name_front = name_front  # the constant part of a filename  before the number (id)
-        self.name_end = name_end  # the constant part of a filename  after the number (id) (incl. '.extension')
+        self.path = path
+        self.name_front = name_front
+        self.name_end = name_end
+
         if ids is None:
             super().__init__(single_time_step, [0], grid_unit, sim_box_shape, [data_stored])
             self.find_ids()
         else:
             super().__init__(single_time_step, ids, grid_unit, sim_box_shape, [data_stored])
 
-        self.export_func = export_func # a function which opens the file. it should take the path to the file
-            #  as the first argument and interation as second.
-        #
+        self.export_func = export_func
+
         # check if files are there:
         isok, bad = self.check(no_print=True)
         if not isok:
-            print('File check at the initialization performed. Some files are not there. Ids of the missing files are:')
+            print('File check at the initialization performed. Some files are not there. Missing iterations are:')
             print(bad)
 
+        # If the shape is not given, obtain it from one of the files.
+        # It's assumed that is same for all files.
         if sim_box_shape is None:
             self. sim_box_shape = self.open(self.ids[0], data_stored).shape
 
     def find_ids(self):
+        """Searches for the available iterations in the matching file names."""
         regex = re.compile(self.name_front +r'\d+' + self.name_end)
         matching_files = []
         for filename in os.listdir(self.path):
@@ -50,15 +71,16 @@ class UniversalSingle(GenericList):
             ids[ii] = int(filename[front_offset:-rear_offset])
         self.ids = ids
 
-    def full_path(self, idd: int) -> str:
-        if idd not in self.ids:
+    def full_path(self, iteration: int) -> str:
+        """Returns a full path to a file, with a specific iteration."""
+        if iteration not in self.ids:
             raise ValueError('The id has to be listed in `ids` Attribute!')
-        full_path = os.path.join(self.path, self.name_front + str(idd) + self.name_end)
+        full_path = os.path.join(self.path, self.name_front + str(iteration) + self.name_end)
         full_path = os.path.normpath(full_path)
         return full_path
 
     def check(self, ids: Union[Sequence[int], int] = None, no_print: bool = False) -> Tuple[bool, list]:
-
+        """Check if all listed files exist."""
         if ids is None:
             ids = self.ids
         else:
@@ -80,6 +102,7 @@ class UniversalSingle(GenericList):
         return ok, bad_ids
 
     def open(self, iteration: int, field: str) -> np.ndarray:
+        """Opens the field data, for a specific iteration., as a numpy array."""
         field = field.strip()
         if field not in self.data_stored:
             raise ValueError("This FilesList object is not set to store this type of a simulation data.")

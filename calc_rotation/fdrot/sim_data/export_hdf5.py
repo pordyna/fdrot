@@ -1,5 +1,6 @@
 import h5py
 
+
 def export_h5py_bz(path, step):
     with h5py.File(path) as file:
         B_z_h5py = file['data/'+str(step)+'/fields/B/z']

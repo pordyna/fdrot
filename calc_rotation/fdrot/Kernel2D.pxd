@@ -36,6 +36,6 @@ cdef class Kernel2D:
     cdef inside_y_loop (self, Py_ssize_t zz, Py_ssize_t yy ,  Interval interval,  double [:,:] output)
     cdef double sum_line_over_pulse(self, Py_ssize_t leading_start, Py_ssize_t leading_stop, UpDown up_down)
     cdef write_out(self, Py_ssize_t zz, Py_ssize_t yy, double summed_line, UpDown up_down)
-    cpdef rotate_slice(self, Py_ssize_t leading_start, Py_ssize_t leading_stop)
+    cpdef propagate_step(self, Py_ssize_t leading_start, Py_ssize_t leading_stop)
 
 
