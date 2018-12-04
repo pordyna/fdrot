@@ -34,7 +34,7 @@ class SimSequence:
          or a mapping of lists to the fields. Acceptable keys are 'Bz' and 'n_e'.
         pulse_length_cells: Length of the pulse in cells.
     """
-    def __init__(self, files: SimFiles,pulse_length_cells: int, iteration: Tuple[int, int, int],
+    def __init__(self, files: SimFiles, pulse_length_cells: int, iteration: Tuple[int, int, int],
                  slices: Sequence[Tuple[int,int]], global_start: int,
                  global_end: int) -> None:
         """ Initializes a SimSequence object.
