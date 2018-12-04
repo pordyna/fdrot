@@ -172,10 +172,12 @@ cdef class Kernel2D:
         if start < self.r_len_half + modifier and stop <= self.r_len_half + modifier:
             p_converted[0].start = self.r_len_half - start + modifier
             p_converted[0].stop = self.r_len_half - stop + modifier
+            assert p_converted[0].stop >=0
             return 0 # has to be in Side
         if start >= self.r_len_half  and stop > self.r_len_half:
-            p_converted[0].start = stop - self.r_len_half -1 + modifier
-            p_converted[0].stop = start -self. r_len_half -1 + modifier
+            p_converted[0].start = stop - self.r_len_half
+            p_converted[0].stop = start - self.r_len_half
+            assert p_converted[0].stop >=0
             return 1 # has to be in Side
         else:
             raise ValueError("Interval goes over the middle point. You have to split it first.")
@@ -215,7 +217,11 @@ cdef class Kernel2D:
             rr = int(radius)
             val_up = self.interpolate_up(zz, rr, radius) * (yy + self.y_offset) / radius
             val_up *= step_size
-            output[0, xx -1] = val_up
+            try:
+                output[0, xx-1] = val_up
+            except IndexError:
+                print(1, "xx:", xx, "yy", yy)
+                raise
             if incl_down:
                 val_down = self.interpolate_down(zz, rr, radius) * (yy + self.y_offset) / radius
                 val_down *= step_size
@@ -226,15 +232,19 @@ cdef class Kernel2D:
         # If `inc_sym_only_vertical_middle` is set to True, the outcome is multiplied by two.
         # That is needed if we are going to continue with a next interval, starting at the next cell,
         # and not at this axis anymore. For example when a bigger interval was split in to two.
-        if x_stop == 1 and self._odd:
-            xx = x_stop
+        if x_stop == 0 and self._odd:
+            xx = 1
             x_stop += 1
             radius = sqrt(self.y_sqrd + d_square(0.25))
             rr = int(radius)
             val_up = self.interpolate_up(zz, rr, radius) * (yy + self.y_offset) / radius
             if not self.inc_sym_only_vertical_middle:
                 val_up *= 0.5
-            output[0, xx -1] = val_up
+            try:
+                output[0, xx-1] = val_up
+            except IndexError:
+                print(2, "xx:", xx, "yy", yy)
+                raise
             if incl_down:
                 val_down = self.interpolate_down(zz, rr, radius) * (yy + self.y_offset) / radius
                 if not self.inc_sym_only_vertical_middle:
@@ -248,7 +258,11 @@ cdef class Kernel2D:
             #     print('xx', xx, 'yy', yy)
             rr = int(radius)
             val_up = self.interpolate_up(zz, rr, radius) * (yy + self.y_offset) / radius
-            output[0, xx-1] = val_up
+            try:
+                output[0, xx-1] = val_up
+            except IndexError:
+                print(3, "xx:", xx, "yy", yy)
+                raise
             if incl_down:
                 val_down = self.interpolate_down(zz, rr, radius) * (yy + self.y_offset) / radius
                 output[1, xx-1] = val_down
@@ -380,7 +394,7 @@ cdef class Kernel2D:
                     if side is left:
                         self.inside_y_loop(zz, yy, first_interval, self.x_line[:, self.r_len_half - self.offset ::-1])
                     if side is right:
-                        self.inside_y_loop(zz, yy, first_interval, self.x_line[:, self.r_len_half::1])
+                        self.inside_y_loop(zz, yy, first_interval, self.x_line[:, self.r_len_half:])
                 # Integrated over the pulse:
                 #if zz == 0:
                     #print("line: ",self.line)
