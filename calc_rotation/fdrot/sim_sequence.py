@@ -6,11 +6,11 @@ and propagating over them.
 
 from typing import Union, Tuple, Sequence, MutableSequence, Mapping
 from warnings import warn
+import math
 
 import numpy as np
-
+from scipy.constants import electron_mass, speed_of_light, elementary_charge, epsilon_0
 from .sim_data import GenericList
-from .c_rotation import one_step_extended_pulse
 from . import spliters
 from .Kernel2D import Kernel2D
 
@@ -117,8 +117,14 @@ class SimSequence:
             return data[0]
         return data
 
-    # TODO: implement the factor. Has to include the integration constants and dx.
-    def rotation_2d_perp(self, pulse: np.ndarray, interpolation: bool = True) -> np.ndarray:
+    def integration_factor(self, wavelength):
+        critical_density = electron_mass * epsilon_0 * ((2 * math.pi * speed_of_light)
+                                                        / (elementary_charge * wavelength))**2
+        files_bz = self.get_files('Bz')
+        delta_x = files_bz.grid_unit
+        return elementary_charge / (2 * speed_of_light * electron_mass) / critical_density * delta_x
+
+    def rotation_2d_perp(self, pulse: np.ndarray, wavelength: float, interpolation: bool = True) -> np.ndarray:
         """Propagates the pulse and calculates the integrated faraday rotation.
 
         The effect is integrated over the pulse.
@@ -136,12 +142,12 @@ class SimSequence:
         # TODO: When fused types start to work, allow single precision output.
         output = np.zeros((files_bz.sim_box_shape[0] * files_bz.sim_box_shape[1]), dtype=np.float64)
         output = output.reshape((files_bz.sim_box_shape[1], files_bz.sim_box_shape[0]))
-        factor = 1.0  # It should be sth else. Not implemented yet.
+        factor = self.integration_factor(wavelength)
 
         # start the Kernel:
         step_data = self.get_data('Bz', 0) * self.get_data('n_e', 0)
         kernel = Kernel2D(step_data, output, pulse, factor, self.global_start, self.global_end,
-                          interpolation=interpolation, inc_sym=0, add=1)
+                          interpolation=interpolation, inc_sym=False, add=True)
         # rotate with the first slice:
         # TODO: maybe put it in the loop, by allowing kernel initialization without specifying the input?
         kernel.propagate_step(self.slices[0][0], self.slices[0][1])

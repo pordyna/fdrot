@@ -7,6 +7,7 @@ This file is a part of an Cython extension in the Fdrot package.
 It provides the the tools for a time resolved propagation of a pulse through a simulation box
 and calculating the Faraday effect.
 """
+#
 
 # TODO: Try using the fused types again for the input and the output, so that single precision data is acceptable.
 from libc.math cimport sqrt
@@ -86,7 +87,7 @@ cdef class Kernel2D:
             self.write_offset = 0
             self.y_loop_start =  1
             self.r_offset = 0
-            self.x_offset = -0.5 # changed from 0 to -1, I think it should be that way
+            self.x_offset = -0.5 
             self.y_offset = 0
             self.max_radius_sqd = d_square(self.r_len_half + 0.5)
             self.x_count_offset = 1
@@ -123,7 +124,6 @@ cdef class Kernel2D:
     def line(self):
         return np.asarray(self.x_line)
 
-    # TODO: Maybe don't interpolate over the rotational axis?
     @cython.cdivision(True)
     #@cython.boundscheck(False)
     @cython.wraparound(False)
@@ -217,11 +217,7 @@ cdef class Kernel2D:
             rr = int(radius)
             val_up = self.interpolate_up(zz, rr, radius) * (yy + self.y_offset) / radius
             val_up *= step_size
-            try:
-                output[0, xx-1] = val_up
-            except IndexError:
-                print(1, "xx:", xx, "yy", yy)
-                raise
+            output[0, xx-1] = val_up
             if incl_down:
                 val_down = self.interpolate_down(zz, rr, radius) * (yy + self.y_offset) / radius
                 val_down *= step_size
@@ -240,11 +236,7 @@ cdef class Kernel2D:
             val_up = self.interpolate_up(zz, rr, radius) * (yy + self.y_offset) / radius
             if not self.inc_sym_only_vertical_middle:
                 val_up *= 0.5
-            try:
-                output[0, xx-1] = val_up
-            except IndexError:
-                print(2, "xx:", xx, "yy", yy)
-                raise
+            output[0, xx-1] = val_up
             if incl_down:
                 val_down = self.interpolate_down(zz, rr, radius) * (yy + self.y_offset) / radius
                 if not self.inc_sym_only_vertical_middle:
@@ -258,11 +250,7 @@ cdef class Kernel2D:
             #     print('xx', xx, 'yy', yy)
             rr = int(radius)
             val_up = self.interpolate_up(zz, rr, radius) * (yy + self.y_offset) / radius
-            try:
-                output[0, xx-1] = val_up
-            except IndexError:
-                print(3, "xx:", xx, "yy", yy)
-                raise
+            output[0, xx-1] = val_up
             if incl_down:
                 val_down = self.interpolate_down(zz, rr, radius) * (yy + self.y_offset) / radius
                 output[1, xx-1] = val_down
@@ -271,7 +259,7 @@ cdef class Kernel2D:
     @cython.cdivision(True)
     #@cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef short inside_y_loop (self, Py_ssize_t zz, Py_ssize_t yy ,  Interval interval,  double [:,:] output) except -1:
+    cdef short inside_y_loop(self, Py_ssize_t zz, Py_ssize_t yy ,  Interval interval,  double [:,:] output, bint incl_down=True) except -1:
         cdef Py_ssize_t x_start
         # calculate the start value for the X-loop.
         if  interval.start >= self.max_xx_at_y:
@@ -281,8 +269,11 @@ cdef class Kernel2D:
             x_start = interval.start
             self.edge = False
         # Run the loop.
-        self.x_loop(zz, yy, x_start, interval.stop, output)
+        if x_start <= interval.stop:
+            return 1
+        self.x_loop(zz, yy, x_start, interval.stop, output, incl_down)
         return 0
+#
 
     @cython.cdivision(True)
     #@cython.boundscheck(False)
@@ -349,12 +340,13 @@ cdef class Kernel2D:
         if not self.add and up_down == down:
             self.output_d[self.r_len_half +  yy,  self.s_len - 1 - zz]  = self.factor * summed_line
         return 0
-
+#
 
     @cython.cdivision(True)
     #@cython.boundscheck(False)
-    @cython.wraparound(False)
+    @cython.wraparound(True)
     cpdef short propagate_step(self, Py_ssize_t leading_start, Py_ssize_t leading_stop) except -1:
+        self.x_line[:,:] = 5
         """It propagates the pulse through a single time step.
         
         :param leading_start: Interval start for the leading slice of the pulse (in a single time step).
@@ -382,10 +374,11 @@ cdef class Kernel2D:
         for zz in range(self.s_len):
             # Calculate the effect for all cells needed for this times tep:
             for yy in range(self.y_loop_start, self.r_len_half + self.y_loop_start):
+                self.x_line[:,:] = 0
+
                 self.y_sqrd = d_square(yy + self.y_offset)
                 self.max_x_at_y = sqrt(self.max_radius_sqd - self.y_sqrd)
                 self.max_xx_at_y = <Py_ssize_t>ceil(self.max_x_at_y - self.x_offset)
-
                 # the array to save the line
                 if split:
                     self.inside_y_loop(zz, yy,  first_interval, self.x_line[:, self.r_len_half - self.offset ::-1])
@@ -395,15 +388,11 @@ cdef class Kernel2D:
                         self.inside_y_loop(zz, yy, first_interval, self.x_line[:, self.r_len_half - self.offset ::-1])
                     if side is right:
                         self.inside_y_loop(zz, yy, first_interval, self.x_line[:, self.r_len_half:])
-                # Integrated over the pulse:
-                #if zz == 0:
-                    #print("line: ",self.line)
                 summed_up = self.sum_line_over_pulse(yy, leading_start, leading_stop, up)
                 summed_down = self.sum_line_over_pulse(yy, leading_start, leading_stop, down)
                 #Add the effect from this time step to the output.
                 self.write_out(zz, yy, summed_up, up)
                 self.write_out(zz, yy, summed_down, down)
-
             # Extra calculation for yy=0 in the odd case. It's moved a half of the cell from
             # the middle (yy=0), so that it's not equal 0. yy=0 was already excluded from the loop above
             # by the `y_loop_start` attribute.
@@ -413,16 +402,16 @@ cdef class Kernel2D:
                 self.y_sqrd = 0.25**2
                 if split:
                     # print('start', first_interval.start, 'stop', first_interval.stop)
-                    self.x_loop(zz, 0,  first_interval.start, first_interval.stop,
+                    self.inside_y_loop(zz, 0,  first_interval,
                                  self.x_line[:, self.r_len_half - self.offset ::-1], incl_down=False)
-                    self.x_loop(zz, 0, first_interval.start, first_interval.stop,
+                    self.inside_y_loop(zz, 0, second_interval,
                                  self.x_line[:, self.r_len_half::1], incl_down=False)
                 else:
                     if side is left:
-                        self.x_loop(zz, 0, first_interval.start, first_interval.stop,
+                        self.inside_y_loop(zz, 0, first_interval,
                                      self.x_line[:, self.r_len_half - self.offset ::-1], incl_down=False)
                     if side is right:
-                        self.x_loop(zz, 0, first_interval.start, first_interval.stop,
+                        self.inside_y_loop(zz, 0, first_interval,
                                             self.x_line[:, self.r_len_half::1], incl_down=False)
                 self.y_offset = save
                 #if zz == 0:

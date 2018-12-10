@@ -39,9 +39,8 @@ cdef class Kernel2D:
     cdef bint if_split(self, Py_ssize_t start, Py_ssize_t stop) except *
     cdef short x_loop(self, Py_ssize_t zz, Py_ssize_t yy,
                  Py_ssize_t x_start , Py_ssize_t x_stop, double [:,:] output, bint incl_down=*) except -1
-    cdef short inside_y_loop (self, Py_ssize_t zz, Py_ssize_t yy ,  Interval interval,  double [:,:] output) except -1
+    cdef short inside_y_loop(self, Py_ssize_t zz, Py_ssize_t yy ,  Interval interval,  double [:,:] output, bint incl_down=*) except -1
     cdef double sum_line_over_pulse(self, Py_ssize_t yy, Py_ssize_t leading_start, Py_ssize_t leading_stop, UpDown up_down) except *
     cdef short write_out(self, Py_ssize_t zz, Py_ssize_t yy, double summed_line, UpDown up_down) except -1
     cpdef short propagate_step(self, Py_ssize_t leading_start, Py_ssize_t leading_stop) except -1
-
 
