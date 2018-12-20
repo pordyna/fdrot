@@ -125,7 +125,7 @@ cdef class Kernel2D:
         return np.asarray(self.x_line)
 
     @cython.cdivision(True)
-    #@cython.boundscheck(False)
+    @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef double interpolate_up(self, Py_ssize_t zz, Py_ssize_t rr, double radius) except *:
         cdef double value_1, value_2
@@ -138,7 +138,7 @@ cdef class Kernel2D:
         return value_1 + value_diff * (radius - (rr + self.r_offset ))
 
     @cython.cdivision(True)
-    #@cython.boundscheck(False)
+    @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef double interpolate_down(self, Py_ssize_t zz, Py_ssize_t rr, double radius) except *:
         cdef double value_1, value_2
@@ -195,8 +195,9 @@ cdef class Kernel2D:
         else:
             return False
 
+
     @cython.cdivision(True)
-    #@cython.boundscheck(False)
+    @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef short x_loop(self, Py_ssize_t zz, Py_ssize_t yy,
                  Py_ssize_t x_start , Py_ssize_t x_stop, double [:,:] output, bint incl_down=True) except -1 :
@@ -257,7 +258,7 @@ cdef class Kernel2D:
         return 0
 
     @cython.cdivision(True)
-    #@cython.boundscheck(False)
+    @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef short inside_y_loop(self, Py_ssize_t zz, Py_ssize_t yy ,  Interval interval,  double [:,:] output, bint incl_down=True) except -1:
         cdef Py_ssize_t x_start
@@ -276,7 +277,7 @@ cdef class Kernel2D:
 #
 
     @cython.cdivision(True)
-    #@cython.boundscheck(False)
+    @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef double sum_line_over_pulse(self, Py_ssize_t yy, Py_ssize_t leading_start, Py_ssize_t leading_stop, UpDown up_down) except* :
         """ Integrates the effect on one line over the pulse.
@@ -324,7 +325,7 @@ cdef class Kernel2D:
         return summed_over_pulse
 
     @cython.cdivision(True)
-    #@cython.boundscheck(False)
+    @cython.boundscheck(False)
     @cython.wraparound(False)
     cdef short write_out(self, Py_ssize_t zz, Py_ssize_t yy, double summed_line, UpDown up_down) except -1:
         """Writes the effect summed over a line to the output.
@@ -343,7 +344,7 @@ cdef class Kernel2D:
 #
 
     @cython.cdivision(True)
-    #@cython.boundscheck(False)
+    @cython.boundscheck(False)
     @cython.wraparound(True)
     cpdef short propagate_step(self, Py_ssize_t leading_start, Py_ssize_t leading_stop) except -1:
         self.x_line[:,:] = 5
