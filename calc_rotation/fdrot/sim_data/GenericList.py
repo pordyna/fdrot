@@ -2,12 +2,15 @@
 This file is a part of the Fdrot package.
 """
 
-from typing import Sequence, Iterable, Union, List, Tuple, Optional
+from typing import Sequence, Iterable, Union, List, Tuple, Optional, NamedTuple
 from warnings import warn
 
 Shape = Union[Tuple[int, int], Tuple[int, int, int]]
 
-
+class AxisOrder(NamedTuple):
+    x: int
+    y: int
+    z: int
 
 class GenericList:
     """ A generic class for a list of simulation files. All lists should inherit from it.
@@ -29,9 +32,12 @@ class GenericList:
         self.grid_unit = grid_unit
         self.sim_box_shape = sim_box_shape
         self.data_stored = data_stored
-        self.axis_map = axis_map
-        if self.axis_map is None and self.data_dim == 3:
+        # self.axis_map = axis_map
+        if axis_map is None and self.data_dim == 3:
             raise TypeError("`axis_map` can't be None if data is in 3D.")
+        if axis_map is not None:
+            self.axis_map =
+
 
     @property
     def data_dim(self) -> int:
