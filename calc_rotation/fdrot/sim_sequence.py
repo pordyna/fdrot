@@ -4,7 +4,7 @@ It provides tools for managing and creating sequences of time steps
 and propagating over them.
 """
 
-from typing import Union, Tuple, Sequence, MutableSequence, Mapping
+from typing import Union, Tuple, Sequence, MutableSequence, Mapping, NamedTuple, Optional
 from warnings import warn
 import math
 
@@ -13,10 +13,19 @@ from scipy.constants import electron_mass, speed_of_light, elementary_charge, ep
 from .sim_data import GenericList
 from . import spliters
 from .Kernel2D import Kernel2D
+from .kernel3d import kernel3d
 
 SimFiles = Union[GenericList, Mapping[str, GenericList]]
 # TODO: maybe change Mapping[str, GenericList] to a named tuple?
 
+class AxisOrder(NamedTuple):
+    in_slice: int = 1
+    x_ray: int = 2
+
+def _switch_axis(array: np.ndarray, current_order: AxisOrder, desired_order: Optional[AxisOrder] = None) -> np.ndarray:
+    if desired_order is None:
+        desired_order = AxisOrder()
+    return np.moveaxis(array, current_order, desired_order)
 
 # naming: maybe different class name? It's not a Sequence like typing.Sequence.
 class SimSequence:
@@ -73,9 +82,10 @@ class SimSequence:
         missing = []
         for step in range(self.number_of_steps):
             idd = self.step_to_iter(step)
-            for field in ('Bz', 'n_e'):
-                if idd not in self.get_files(field).ids:
-                    missing.append((step, idd, field))
+            if isinstance(self.files, Mapping):
+                for field, file in self.files.items():
+                    if idd not in file.ids:
+                        missing.append((step, idd, field))
         ok = not bool(missing)
         if not ok:
             print("Those iterations are missing, (step, iteration, field):")
@@ -83,7 +93,8 @@ class SimSequence:
         return ok
 
     def get_data(self, field: str, steps: Union[int, Sequence[int], str],
-                 make_contiguous: bool = True)-> Union[np.ndarray, MutableSequence[np.ndarray]]:
+                 make_contiguous: bool = True,
+                 cast_to: Optional[np.dtype] = None )-> Union[np.ndarray, MutableSequence[np.ndarray]]:
         """Returns the field data for one or more steps.
 
         If make_contiguous is set to True, the 'C_CONTIGUOUS' flag is checked and, if needed, a
@@ -105,9 +116,11 @@ class SimSequence:
         data = [len(steps)]
         for ii,  step in enumerate(steps):
             data[ii] = self.get_files(field).open(self.step_to_iter(step), field)
-            # This must be removed when single precision is also supported. Problems with fused types.
-            if data[ii].dtype != np.float64:
-                data[ii] = data[ii].astype(np.float64)
+            if cast_to is not None:
+                if data[ii].dtype < cast_to:
+                    data[ii] = data[ii].astype(cast_to)
+                if data[ii].dtype > cast_to:
+                    raise TypeError("Data for the iteration {} can't be safely cast to the desired type.".format(ii))
         if make_contiguous:
             for ii, step in enumerate(data):
                 if not  step.flags['C_CONTIGUOUS']:
@@ -133,11 +146,16 @@ class SimSequence:
             interpolation: Turns interpolation on and off.
         Returns: rotation data
         """
-        if pulse.size != self.pulse_length_cells:
-            raise ValueError("This sequence was generated for a different pulse length ")
 
         # need one files list to get the correct output shape:
         files_bz = self.get_files('Bz')
+        assert files_bz.data_dim == 2, "This method works only  with 2 dimensional data."
+
+        if pulse.size != self.pulse_length_cells:
+            raise ValueError("This sequence was generated for a different pulse length ")
+        if pulse.dtype < np.dtype('float64'):
+            pulse = pulse.astype(np.float64)
+
         # create output:
         # TODO: When fused types start to work, allow single precision output.
         output = np.zeros((files_bz.sim_box_shape[0] * files_bz.sim_box_shape[1]), dtype=np.float64)
@@ -154,12 +172,28 @@ class SimSequence:
 
         # do the other steps:
         for step in range(1, self.number_of_steps):
-            step_data = self.get_data('Bz', step) * self.get_data('n_e', step)
+            step_data = (self.get_data('Bz', step, cast_to=np.dtype('float64'))
+                         * self.get_data('n_e', step, cast_to=np.dtype('float64')))
             step_interval = self.slices[step]
             kernel.input = step_data
             kernel.propagate_step(step_interval[0], step_interval[1])
 
         return output
+
+    def rotation_3d_perp(self, pulse, wavelength: float, second_axis_output: str, x_ray_axis: str) -> np.ndarray:
+
+        if second_axis_output not in ['x', 'y', 'z']:
+            raise ValueError("`first_axis_output` hast to be 'x' or 'y' or 'z'.")
+        if x_ray_axis not in ['x', 'y', 'z']:
+            raise ValueError("`x_ray_axis` hast to be 'x' or 'y' or 'z'.")
+        b_field_component: str = 'B' + x_ray_axis
+        b_axis_map = self.get_files(b_field_component).axis_map
+        n_e_axis_map = self.get_files('n_e').axis_map
+
+        for step in range(self.number_of_steps):
+            files = self.get_files()
+            kernel3d()
+
 
 
 def _get_params(files: GenericList):
@@ -179,8 +213,9 @@ def seq_cells(start: int, end: int, inc_time: float, iter_step: int, pulse_lengt
         iter_step: Number of simulation iterations in one time step.
         pulse_length_cells: Length of the beam in cells.
         files: It can be a single files list (see the sim_data module), if it provides all the fields,
-         or a mapping of lists to the fields. Acceptable keys are 'Bz' and 'n_e'.
+         or a mapping of lists to the fields. Acceptable keys are 'Bx', 'By', 'Bz' and 'n_e'.
     """
+    # TODO do I need this iter_step?
     # Handling the case with mapping:
     if isinstance(files, Mapping):
         params = _get_params(list(files.values())[0])
@@ -203,7 +238,7 @@ def seq_microns(start: int, end: int, inc_time: float, iter_step: int, pulse_len
            iter_step: Number of simulation iterations in one time step.
            pulse_length_cells: Length of the beam in cells.
            files: It can be a single files list (see the sim_data module), if it provides all the fields,
-            or a mapping of lists to the fields. Acceptable keys are 'Bz' and 'n_e'.
+            or a mapping of lists to the fields. Acceptable keys are 'Bx', 'By', 'Bz' and 'n_e'.
        """
     if isinstance(files, Mapping):
         params = _get_params(list(files.values())[0])
