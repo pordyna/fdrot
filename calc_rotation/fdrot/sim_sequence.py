@@ -19,12 +19,11 @@ SimFiles = Union[GenericList, Mapping[str, GenericList]]
 # TODO: maybe change Mapping[str, GenericList] to a named tuple?
 
 class AxisOrder(NamedTuple):
-    in_slice: int = 1
-    x_ray: int = 2
+    x: int
+    y: int
+    z: Optional[int]  # In case we need it for the 2D case as well.
 
-def _switch_axis(array: np.ndarray, current_order: AxisOrder, desired_order: Optional[AxisOrder] = None) -> np.ndarray:
-    if desired_order is None:
-        desired_order = AxisOrder()
+def _switch_axis(array: np.ndarray, current_order: AxisOrder, desired_order: AxisOrder) -> np.ndarray:
     return np.moveaxis(array, current_order, desired_order)
 
 # naming: maybe different class name? It's not a Sequence like typing.Sequence.
@@ -60,6 +59,12 @@ class SimSequence:
         if not self.check_iterations():
             raise ValueError("Iterations missing in the file index.")
 
+        if isinstance(self.files, Mapping):
+            shapes = []
+            for field in self.files.values():
+                shapes.append(field.sim_box_shape)
+            assert len(set(shapes)) == 1, "All file lists should have the same `sim_box_shape`."
+
     def step_to_iter(self, step: int) -> int:
         """ Returns the iteration number for the given step."""
         if step < 0 or step >= self.number_of_steps:
@@ -94,7 +99,10 @@ class SimSequence:
 
     def get_data(self, field: str, steps: Union[int, Sequence[int], str],
                  make_contiguous: bool = True,
-                 cast_to: Optional[np.dtype] = None )-> Union[np.ndarray, MutableSequence[np.ndarray]]:
+                 cast_to: Optional[np.dtype] = None,
+             dim1_cut: Optional[Tuple[int, int]] = None,
+             dim2_cut: Optional[Tuple[int, int]] = None,
+             dim3_cut: Optional[Tuple[int, int]] = None )-> Union[np.ndarray, MutableSequence[np.ndarray]]:
         """Returns the field data for one or more steps.
 
         If make_contiguous is set to True, the 'C_CONTIGUOUS' flag is checked and, if needed, a
@@ -182,21 +190,41 @@ class SimSequence:
 
     def rotation_3d_perp(self, pulse, wavelength: float, second_axis_output: str, x_ray_axis: str) -> np.ndarray:
 
-        if second_axis_output not in ['x', 'y', 'z']:
+        acceptable_names = ['x', 'y', 'z']
+        if second_axis_output not in acceptable_names:
             raise ValueError("`first_axis_output` hast to be 'x' or 'y' or 'z'.")
-        if x_ray_axis not in ['x', 'y', 'z']:
+        if x_ray_axis not in acceptable_names:
             raise ValueError("`x_ray_axis` hast to be 'x' or 'y' or 'z'.")
         b_field_component: str = 'B' + x_ray_axis
-        b_axis_map = self.get_files(b_field_component).axis_map
-        n_e_axis_map = self.get_files('n_e').axis_map
+        # Axis order in the loaded data.
+        b_axis_order = self.get_files(b_field_component).axis_map
+        n_e_axis_order = self.get_files('n_e').axis_map
+        # x_ray_axis has to be the last one, second_axis_output has to be the second
 
+        last_axis = acceptable_names
+        for ax in [second_axis_output, x_ray_axis]:
+            idx = last_axis.index(ax)
+            last_axis.pop(idx)
+        assert len(last_axis) == 1
+        last_axis = last_axis[0]
+        desired_order = {x_ray_axis: 3, second_axis_output: 2, last_axis: 1}
+        desired_order = AxisOrder(**desired_order)
+        output = np.zeros()
         for step in range(self.number_of_steps):
-            files = self.get_files()
-            kernel3d()
-
-
+            # TODO add chunks.
+            data_b = self.get_data(b_field_component, step)  # cast_to ? needed if we introduce cython.
+            data_n = self.get_data('n_e', step)
+            if b_axis_order != desired_order:
+                data_b = _switch_axis(data_b, b_axis_order, desired_order)
+            if n_e_axis_order != desired_order:
+                data_n = _switch_axis(data_n, n_e_axis_order, desired_order)
+            data = data_b * data_n
+            step_interval = self.slices[step]
+            kernel3d(pulse, data, output, self.global_start, self.global_end, step_interval[0], step_interval[1])
+        return output
 
 def _get_params(files: GenericList):
+
     dt = files.single_time_step
     grid_unit = files.grid_unit
     return dt, grid_unit

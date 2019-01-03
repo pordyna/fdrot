@@ -23,7 +23,7 @@ def kernel3d(pulse: np.ndarray,
     pulse_len = pulse.shape[0]
     duration = leading_stop - leading_start  # in cells
     for zz in range(input_arr.shape[0]):
-        summed = np.zeros_like((input_arr.shape[1]))  #
+        summed = np.zeros_like((input_arr.shape[1]))  # y
         input_slice = input_arr[zz, :, :]  # 2D (y,x)
         pulse_head = leading_start  # cell where the most right slice of the pulse is.
         pulse_tail = pulse_head - pulse_len  # cell where the most left slice of the pulse is.

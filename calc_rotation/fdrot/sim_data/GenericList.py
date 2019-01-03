@@ -10,7 +10,7 @@ Shape = Union[Tuple[int, int], Tuple[int, int, int]]
 class AxisOrder(NamedTuple):
     x: int
     y: int
-    z: int
+    z: Optional[int]  # In case we need it for the 2D case as well.
 
 class GenericList:
     """ A generic class for a list of simulation files. All lists should inherit from it.
@@ -21,8 +21,8 @@ class GenericList:
             grid_unit: Length of one cell in a simulation. (dx)
             sim_box_shape: The shape of the simulation box.
             data_stored: Fields accessible through this index. Stored as string keys (example: ['Bz', n_e']).
-            axis_map : ('x', 'y', 'z') or any permutation of its values. Set only in the 3D case. It should
-                correspond with the orientation of the fields components.
+            axis_map : ('x', 'y', 'z') or any permutation of its values. Has to be set only in the 3D case. It should
+                correspond with the orientation of the fields components (for example Bz has to be in z direction).
     """
     def __init__(self, single_time_step: float, ids: Sequence[int],
                  grid_unit: float, sim_box_shape: Shape, data_stored: Sequence[str],
@@ -36,7 +36,9 @@ class GenericList:
         if axis_map is None and self.data_dim == 3:
             raise TypeError("`axis_map` can't be None if data is in 3D.")
         if axis_map is not None:
-            self.axis_map =
+            self.axis_map = AxisOrder(axis_map.index('x'),
+                                      axis_map.index('y'),
+                                      axis_map.index('z'))
 
 
     @property
