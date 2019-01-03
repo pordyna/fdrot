@@ -96,7 +96,7 @@ def micron_perp(start: float, end: float, inc_time: float, iter_step: int,
 
     Returns: Same as in cells_perp.
     """
-    start, end = start * 10e-15, end * 10e-15  # convert to meters
+    start, end = start * 10e-6, end * 10e-6  # convert to meters
     start_cells = int(round(start / grid_unit))
     end_cells = int(round(end / grid_unit))
     return cells_perp(start_cells, end_cells, inc_time, iter_step, beam_length_cells, iteration_dt, grid_unit)

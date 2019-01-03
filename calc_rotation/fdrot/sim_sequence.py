@@ -223,6 +223,7 @@ class SimSequence:
             kernel3d(pulse, data, output, self.global_start, self.global_end, step_interval[0], step_interval[1])
         return output
 
+
 def _get_params(files: GenericList):
 
     dt = files.single_time_step
