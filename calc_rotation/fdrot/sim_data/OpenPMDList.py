@@ -22,32 +22,39 @@ class OpenPMDList(GenericList):
     def __init__(self, series: openPMD.Series, data_stored: Sequence,
                  single_time_step: Optional[float],
                  sim_box_shape: Optional[Tuple[int, int]],
-                 grid_unit: Optional[int], axis_map: Optional[Sequence[str]] = None):
+                 grid: Optional[Sequence[float]] = None, axis_map: Optional[Sequence[str]] = None,
+                 fields_mapping: Optional[dict] = None):
         """Initializes an OpenPMDList object.
 
         Optional arguments, if they are not specified, are obtained from the series."""
         # Maps the fields to their location in the openPMD container. The location is specified
         # as a tuple of group names.
-        self._fields_mapping = {'Bx': ('B', 'x'), 'By': ('B', 'y'), 'Bz': ('B', 'z'), 'n_e': ('e_density',)}
+        if fields_mapping is None:
+            self.fields_mapping = {'Bx': ('B', 'x'), 'By': ('B', 'y'),
+                                   'Bz': ('B', 'z'), 'n_e': ('e_density', r'\x0bScalar')}
+        else: self.fields_mapping = fields_mapping
         self.series = series
         ids = series.iterations.items
 
         # Obtaining the parameters from the series. It's assumed that, they stay the same, for the whole series.
-        #if axis_map is None:
-        #    axis_map = self._get_mesh_record(ids[0], data_stored[0]).a # TODO: get axis labels
+        if axis_map is None:
+            key = self.fields_mapping[data_stored[0]][0]
+            axis_map = series.iterations[ids[0]][key].axis_labels
         if single_time_step is None:
-            single_time_step = series.iterations[ids[0]].dt
+            single_time_step = series.iterations[ids[0]].dt() * series.iterations[ids[0]].time_unit_SI
         if sim_box_shape is None:
             sim_box_shape = tuple(self._get_mesh_record(ids[0], data_stored[0]).shape)
-        if grid_unit is None:
-            key = self._fields_mapping[data_stored[0]][0]
-            grid_unit = series.iterations[ids[0]][key].grid_unit_SI
-        super().__init__(single_time_step, ids, grid_unit, sim_box_shape, data_stored, axis_map=axis_map)
+        if grid is None:
+            key = self.fields_mapping[data_stored[0]][0]
+            unit = series.iterations[ids[0]][key].grid_unit_SI
+            spacing = series.iterations[ids[0]][key].grid_spacing
+            grid = tuple(unit * np.asarray(spacing))
+        super().__init__(single_time_step, ids, grid, sim_box_shape, data_stored, axis_order=axis_map)
 
-    def _get_mesh_record(self, iteration: int, field: str ) -> openPMD.Mesh:
+    def _get_mesh_record(self, iteration: int, field: str) -> openPMD.Mesh:
         """Returns the mesh from the series, for a specific iteration and field."""
         mesh = self.series.iterations[iteration]
-        for key in self._fields_mapping[field]:
+        for key in self.fields_mapping[field]:
             mesh = mesh[key]
         return mesh
 
@@ -74,4 +81,5 @@ class OpenPMDList(GenericList):
         else:
             offset = [dim1_cut[0], dim2_cut[0]]
         data = data.load_chunk(offset, (dim1_cut[1], dim2_cut[1], dim3_cut[1]))
+        self.series.flush()
         return data

@@ -21,12 +21,14 @@ SimFiles = Union[GenericList, Mapping[str, GenericList]]
 class AxisOrder(NamedTuple):
     x: int
     y: int
-    z: Optional[int]  # In case we need it for the 2D case as well.
+    z: Optional[int] = None  # In case we need it for the 2D case as well.
 
 def _switch_axis(array: np.ndarray, current_order: AxisOrder, desired_order: AxisOrder) -> np.ndarray:
     return np.moveaxis(array, current_order, desired_order)
 
 # naming: maybe different class name? It's not a Sequence like typing.Sequence.
+
+
 class SimSequence:
     """ A sequence of time steps, mapped to the simulation data. Stores some simulation parameters.
 
@@ -41,8 +43,9 @@ class SimSequence:
         files: It can be a single files list (see the sim_data module), if it provides all the fields,
          or a mapping of lists to the fields. Acceptable keys are 'Bz' and 'n_e'.
         pulse_length_cells: Length of the pulse in cells.
+        propagation_axis:...
     """
-    def __init__(self, files: SimFiles, pulse_length_cells: int, iteration: Tuple[int, int, int],
+    def __init__(self, files: SimFiles, pulse_length_cells: int, propagation_axis: str, iteration: Tuple[int, int, int],
                  slices: Sequence[Tuple[int,int]], global_start: int,
                  global_end: int) -> None:
         """ Initializes a SimSequence object.
@@ -56,14 +59,28 @@ class SimSequence:
         self.global_end = global_end
         self.files = files
         self.pulse_length_cells = pulse_length_cells
+        self.propagation_axis = propagation_axis
+
         if not self.check_iterations():
             raise ValueError("Iterations missing in the file index.")
 
         if isinstance(self.files, Mapping):
             shapes = []
-            for field in self.files.values():
-                shapes.append(field.sim_box_shape)
-            assert len(set(shapes)) == 1, "All file lists should have the same `sim_box_shape`."
+            axis_orders = []
+            grids = []
+            for file_index in self.files.values():
+                shapes.append(file_index.sim_box_shape)
+                axis_orders.append(file_index.axis_order)
+                grids.append(file_index.grid)
+            assert len(set(shapes)) == 1, "All file lists should have the same `sim_box_shape` attr. ."
+            assert len(set(axis_orders)) == 1, "All file lists should have the same `axis_order` attr. ."
+            assert len(set(grids)) == 1, "All file lists should have the same `grid`attr. ."
+
+        # n_e is always needed.
+        self.sim_box_shape = self.get_files('n_e').sim_box_shape
+        self.axis_order = self.get_files('n_e').axis_order
+        ax: int = dict(self.axis_order)[self.propagation_axis]
+        self.cell_length_in_prop_direction = self.get_files('n_e').grid[ax]
 
     def step_to_iter(self, step: int) -> int:
         """ Returns the iteration number for the given step."""
@@ -141,8 +158,7 @@ class SimSequence:
     def integration_factor(self, wavelength):
         critical_density = electron_mass * epsilon_0 * ((2 * math.pi * speed_of_light)
                                                         / (elementary_charge * wavelength))**2
-        files_bz = self.get_files('Bz')
-        delta_x = files_bz.grid_unit
+        delta_x = self.cell_length_in_prop_direction
         return elementary_charge / (2 * speed_of_light * electron_mass) / critical_density * delta_x
 
     def rotation_2d_perp(self, pulse: np.ndarray, wavelength: float, interpolation: bool = True) -> np.ndarray:
@@ -156,7 +172,7 @@ class SimSequence:
         """
 
         # need one files list to get the correct output shape:
-        files_bz = self.get_files('Bz')
+        files_bz = self.get_files('n_e')
         assert files_bz.data_dim == 2, "This method works only  with 2 dimensional data."
 
         if pulse.size != self.pulse_length_cells:
@@ -164,14 +180,35 @@ class SimSequence:
         if pulse.dtype < np.dtype('float64'):
             pulse = pulse.astype(np.float64)
 
+        #check if axis swap is needed:
+        # swap axis and swap sim_box_shape
+        labels = ['x', 'y']
+        ax_2 = labels.pop(labels.index(self.propagation_axis))
+        ax_2 = ax_2[0]
+        desired_order = {self.propagation_axis: 1, ax_2: 0}
+        desired_order = AxisOrder(**desired_order)
+        order_in_index = files_bz.axis_order
+
+        if desired_order != order_in_index:
+            swap_axis = True
+            sim_box_shape_0 = files_bz.sim_box_shape[1]
+            sim_box_shape_1 = files_bz.sim_box_shape[0]
+        else:
+            swap_axis = False
+            sim_box_shape_0 = files_bz.sim_box_shape[0]
+            sim_box_shape_1 = files_bz.sim_box_shape[1]
+
         # create output:
-        # TODO: When fused types start to work, allow single precision output.
-        output = np.zeros((files_bz.sim_box_shape[0] * files_bz.sim_box_shape[1]), dtype=np.float64)
-        output = output.reshape((files_bz.sim_box_shape[1], files_bz.sim_box_shape[0]))
+        output = np.zeros((sim_box_shape_0 * sim_box_shape_1), dtype=np.float64)
+        output = output.reshape((sim_box_shape_1, sim_box_shape_0))
         factor = self.integration_factor(wavelength)
 
         # start the Kernel:
-        step_data = self.get_data('Bz', 0) * self.get_data('n_e', 0)
+
+        step_data = (self.get_data('Bz', 0, cast_to=np.dtype('float64'))
+                     * self.get_data('n_e', 0, cast_to=np.dtype('float64')))
+        if swap_axis:
+            step_data = _switch_axis(step_data, order_in_index, desired_order)
         kernel = Kernel2D(step_data, output, pulse, factor, self.global_start, self.global_end,
                           interpolation=interpolation, inc_sym=False, add=True)
         # rotate with the first slice:
@@ -182,6 +219,8 @@ class SimSequence:
         for step in range(1, self.number_of_steps):
             step_data = (self.get_data('Bz', step, cast_to=np.dtype('float64'))
                          * self.get_data('n_e', step, cast_to=np.dtype('float64')))
+            if swap_axis:
+                step_data = _switch_axis(step_data, order_in_index, desired_order)
             step_interval = self.slices[step]
             kernel.input = step_data
             kernel.propagate_step(step_interval[0], step_interval[1])
@@ -197,8 +236,8 @@ class SimSequence:
             raise ValueError("`x_ray_axis` hast to be 'x' or 'y' or 'z'.")
         b_field_component: str = 'B' + x_ray_axis
         # Axis order in the loaded data.
-        b_axis_order = self.get_files(b_field_component).axis_map
-        n_e_axis_order = self.get_files('n_e').axis_map
+        b_axis_order = self.get_files(b_field_component).axis_order
+        n_e_axis_order = self.get_files('n_e').axis_order
         # x_ray_axis has to be the last one, second_axis_output has to be the second
 
         last_axis = acceptable_names
@@ -207,7 +246,7 @@ class SimSequence:
             last_axis.pop(idx)
         assert len(last_axis) == 1
         last_axis = last_axis[0]
-        desired_order = {x_ray_axis: 3, second_axis_output: 2, last_axis: 1}
+        desired_order = {x_ray_axis: 2, second_axis_output: 1, last_axis: 0}
         desired_order = AxisOrder(**desired_order)
         output = np.zeros()
         for step in range(self.number_of_steps):
@@ -224,15 +263,18 @@ class SimSequence:
         return output
 
 
-def _get_params(files: GenericList):
+def _get_params_and_check(files: GenericList, propagation_axis: str, start: int, end: int):
 
     dt = files.single_time_step
-    grid_unit = files.grid_unit
+    ax = dict(files.axis_order)[propagation_axis]
+    grid_unit = files.grid[ax]
+    if start > files.sim_box_shape[ax] or end > files.sim_box_shape[ax] + 1:
+        raise ValueError("(start, end) outside the simulation box.")
     return dt, grid_unit
 
 
-def seq_cells(start: int, end: int, inc_time: float, iter_step: int, pulse_length_cells: int, files: SimFiles
-              )-> SimSequence:
+def seq_cells(start: int, end: int, inc_time: float, iter_step: int, pulse_length_cells: int, files: SimFiles,
+                propagation_axis: str)-> SimSequence:
     """Creates a SimSequence for the given parameters. Start, end in cells.
 
     Args:
@@ -247,15 +289,16 @@ def seq_cells(start: int, end: int, inc_time: float, iter_step: int, pulse_lengt
     # TODO do I need this iter_step?
     # Handling the case with mapping:
     if isinstance(files, Mapping):
-        params = _get_params(list(files.values())[0])
+        params = _get_params_and_check(list(files.values())[0], propagation_axis, start, end)
     else:
-        params = _get_params(files)
+        params = _get_params_and_check(files, propagation_axis, start, end)
 
     args = spliters.cells_perp(start, end, inc_time, iter_step, pulse_length_cells, *params)
-    return SimSequence(files, pulse_length_cells, *args)
+    return SimSequence(files, pulse_length_cells, propagation_axis, *args)
 
 
-def seq_microns(start: int, end: int, inc_time: float, iter_step: int, pulse_length_cells: int, files: SimFiles):
+def seq_microns(start: int, end: int, inc_time: float, iter_step: int, pulse_length_cells: int, files: SimFiles,
+                propagation_axis: str):
     """Creates a SimSequence for the given parameters. Start, end in microns.
 
        Args:
@@ -270,8 +313,8 @@ def seq_microns(start: int, end: int, inc_time: float, iter_step: int, pulse_len
             or a mapping of lists to the fields. Acceptable keys are 'Bx', 'By', 'Bz' and 'n_e'.
        """
     if isinstance(files, Mapping):
-        params = _get_params(list(files.values())[0])
+        params = _get_params_and_check(list(files.values())[0], propagation_axis, start, end)
     else:
-        params = _get_params(files)
+        params = _get_params_and_check(files, propagation_axis, start, end)
     args = spliters.micron_perp(start, end, inc_time, iter_step, pulse_length_cells, *params)
-    return SimSequence(files, pulse_length_cells, *args)
+    return SimSequence(files, pulse_length_cells, propagation_axis, *args)

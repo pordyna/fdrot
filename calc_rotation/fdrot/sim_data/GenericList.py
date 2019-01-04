@@ -10,7 +10,7 @@ Shape = Union[Tuple[int, int], Tuple[int, int, int]]
 class AxisOrder(NamedTuple):
     x: int
     y: int
-    z: Optional[int]  # In case we need it for the 2D case as well.
+    z: Optional[int] = None  # In case we need it for the 2D case as well.
 
 class GenericList:
     """ A generic class for a list of simulation files. All lists should inherit from it.
@@ -21,24 +21,22 @@ class GenericList:
             grid_unit: Length of one cell in a simulation. (dx)
             sim_box_shape: The shape of the simulation box.
             data_stored: Fields accessible through this index. Stored as string keys (example: ['Bz', n_e']).
-            axis_map : ('x', 'y', 'z') or any permutation of its values. Has to be set only in the 3D case. It should
+            axis_order : ('x', 'y', 'z') or any permutation of its values. In the 2D case use just 'x' and 'y'. It should
                 correspond with the orientation of the fields components (for example Bz has to be in z direction).
     """
     def __init__(self, single_time_step: float, ids: Sequence[int],
-                 grid_unit: float, sim_box_shape: Shape, data_stored: Sequence[str],
-                 axis_map: Optional[Sequence[str]] = None) -> None:
+                 grid: Sequence[float], sim_box_shape: Shape, data_stored: Sequence[str],
+                 axis_order: Sequence[str]) -> None:
         self.single_time_step = single_time_step
         self.ids = ids
-        self.grid_unit = grid_unit
+        self.grid = grid
         self.sim_box_shape = sim_box_shape
         self.data_stored = data_stored
-        # self.axis_map = axis_map
-        if axis_map is None and self.data_dim == 3:
-            raise TypeError("`axis_map` can't be None if data is in 3D.")
-        if axis_map is not None:
-            self.axis_map = AxisOrder(axis_map.index('x'),
-                                      axis_map.index('y'),
-                                      axis_map.index('z'))
+
+        self.axis_order = AxisOrder(axis_order.index('x'),
+                                  axis_order.index('y'))
+        if self.data_dim == 3:
+            self.axis_order.z = axis_order.index('z')
 
 
     @property
