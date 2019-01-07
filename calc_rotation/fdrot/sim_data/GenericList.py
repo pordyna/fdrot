@@ -32,11 +32,14 @@ class GenericList:
         self.grid = grid
         self.sim_box_shape = sim_box_shape
         self.data_stored = data_stored
+        if self.data_dim == 2:
+            self.axis_order = AxisOrder(axis_order.index('x'),
+                                        axis_order.index('y'))
 
-        self.axis_order = AxisOrder(axis_order.index('x'),
-                                  axis_order.index('y'))
         if self.data_dim == 3:
-            self.axis_order.z = axis_order.index('z')
+            self.axis_order = AxisOrder(axis_order.index('x'),
+                                        axis_order.index('y'),
+                                        axis_order.index('z'))
 
 
     @property
