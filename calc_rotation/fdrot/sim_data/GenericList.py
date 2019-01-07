@@ -33,9 +33,10 @@ class GenericList:
         self.sim_box_shape = sim_box_shape
         self.data_stored = data_stored
         self.axis_order = {}
-        if self.data_dim == 2:
-            for idx, axis in enumerate(axis_order):
-                self.axis_order[axis] = idx
+        for idx, axis in enumerate(axis_order):
+            self.axis_order[axis] = idx
+        if self.data_dim not in [2, 3]:
+            raise ValueError("Data has to be either in 2D or 3D.")
         #     self.axis_order = AxisOrder(axis_order.index('x'),
         #                                 axis_order.index('y'))
         #
