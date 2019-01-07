@@ -75,7 +75,7 @@ class SimSequence:
             grids = []
             for file_index in self.files.values():
                 shapes.append(file_index.sim_box_shape)
-                axis_orders.append(file_index.axis_order)
+                axis_orders.append(AxisOrder(**file_index.axis_order))
                 grids.append(file_index.grid)
             assert len(set(shapes)) == 1, "All file lists should have the same `sim_box_shape` attr. ."
             assert len(set(axis_orders)) == 1, "All file lists should have the same `axis_order` attr. ."
