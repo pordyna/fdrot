@@ -4,8 +4,9 @@ It provides tools for managing and creating sequences of time steps
 and propagating over them.
 """
 
-from typing import Union, Tuple, Sequence, MutableSequence, Mapping, NamedTuple, Optional
+from typing import Union, Tuple, Sequence, Mapping, NamedTuple, Optional, Callable, List
 from warnings import warn
+from functools import partial
 import math
 
 import numpy as np
@@ -14,14 +15,10 @@ from .sim_data import GenericList
 from . import spliters
 from .Kernel2D import Kernel2D
 from .kernel3d import kernel3d
+from.sim_data import AxisOrder
 
 SimFiles = Union[GenericList, Mapping[str, GenericList]]
 # TODO: maybe change Mapping[str, GenericList] to a named tuple?
-
-class AxisOrder(NamedTuple):
-    x: int
-    y: int
-    z: Optional[int] = None  # In case we need it for the 2D case as well.
 
 def _switch_axis(array: np.ndarray, current_order: AxisOrder, desired_order: AxisOrder) -> np.ndarray:
     return np.moveaxis(array, current_order, desired_order)
@@ -54,13 +51,16 @@ class SimSequence:
         first_iteration, iter_step and number_of_steps are passed in the iteration tuple.
         """
         self.first_iteration, self.iter_step, self.number_of_steps = iteration
-        self.slices = slices
-        self.global_start = global_start
-        self.global_end = global_end
-        self.files = files
-        self.pulse_length_cells = pulse_length_cells
-        self.propagation_axis = propagation_axis
-
+        self.slices: Sequence[Tuple[int, int]] = slices
+        self.global_start: int = global_start
+        self.global_end: int = global_end
+        self.files: SimFiles = files
+        self.pulse_length_cells: int = pulse_length_cells
+        self._acceptable_names = ['x', 'y', 'z']
+        if propagation_axis not in self._acceptable_names:
+            raise ValueError("`x_ray_axis` hast to be 'x' or 'y' or 'z'.")
+        self.propagation_axis: str = propagation_axis
+        
         if not self.check_iterations():
             raise ValueError("Iterations missing in the file index.")
 
@@ -74,7 +74,7 @@ class SimSequence:
                 grids.append(file_index.grid)
             assert len(set(shapes)) == 1, "All file lists should have the same `sim_box_shape` attr. ."
             assert len(set(axis_orders)) == 1, "All file lists should have the same `axis_order` attr. ."
-            assert len(set(grids)) == 1, "All file lists should have the same `grid`attr. ."
+            assert len(set(grids)) == 1, "All file lists should have the same `grid` attr. ."
 
         # n_e is always needed.
         self.sim_box_shape = self.get_files('n_e').sim_box_shape
@@ -115,16 +115,19 @@ class SimSequence:
         return ok
 
     def get_data(self, field: str, steps: Union[int, Sequence[int], str],
+                 transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
                  make_contiguous: bool = True,
                  cast_to: Optional[np.dtype] = None,
-             dim1_cut: Optional[Tuple[int, int]] = None,
-             dim2_cut: Optional[Tuple[int, int]] = None,
-             dim3_cut: Optional[Tuple[int, int]] = None )-> Union[np.ndarray, MutableSequence[np.ndarray]]:
+                 dim1_cut: Optional[Tuple[int, int]] = None,
+                 dim2_cut: Optional[Tuple[int, int]] = None,
+                 dim3_cut: Optional[Tuple[int, int]] = None)-> Union[np.ndarray, List[np.ndarray]]:
         """Returns the field data for one or more steps.
 
+        transform: use it for any transformation that could change contiguity.
         If make_contiguous is set to True, the 'C_CONTIGUOUS' flag is checked and, if needed, a
         contiguous (in the row major) copy is returned.
          """
+        args_open = (dim1_cut, dim2_cut, dim3_cut)
         try:
             steps.strip()
         except AttributeError:
@@ -140,15 +143,17 @@ class SimSequence:
                                  ' a sequence of integers or \'all\'.')
         data = [len(steps)]
         for ii,  step in enumerate(steps):
-            data[ii] = self.get_files(field).open(self.step_to_iter(step), field)
+            data[ii] = self.get_files(field).open(self.step_to_iter(step), field, *args_open)
             if cast_to is not None:
                 if data[ii].dtype < cast_to:
                     data[ii] = data[ii].astype(cast_to)
                 if data[ii].dtype > cast_to:
                     raise TypeError("Data for the iteration {} can't be safely cast to the desired type.".format(ii))
+            if transform is not None:
+                data[ii] = transform(data[ii])
         if make_contiguous:
             for ii, step in enumerate(data):
-                if not  step.flags['C_CONTIGUOUS']:
+                if not step.flags['C_CONTIGUOUS']:
                     warn('At least one array was not C_Contiguous.')
                     data[ii] = np.ascontiguousarray(step)
         if len(data) == 1:
@@ -180,7 +185,7 @@ class SimSequence:
         if pulse.dtype < np.dtype('float64'):
             pulse = pulse.astype(np.float64)
 
-        #check if axis swap is needed:
+        # check if axis swap is needed:
         # swap axis and swap sim_box_shape
         labels = ['x', 'y']
         ax_2 = labels.pop(labels.index(self.propagation_axis))
@@ -190,13 +195,13 @@ class SimSequence:
         order_in_index = files_bz.axis_order
 
         if desired_order != order_in_index:
-            swap_axis = True
             sim_box_shape_0 = files_bz.sim_box_shape[1]
             sim_box_shape_1 = files_bz.sim_box_shape[0]
+            transform = partial(_switch_axis,  current_order=order_in_index, desired_order=desired_order)
         else:
-            swap_axis = False
             sim_box_shape_0 = files_bz.sim_box_shape[0]
             sim_box_shape_1 = files_bz.sim_box_shape[1]
+            transform = None
 
         # create output:
         output = np.zeros((sim_box_shape_0 * sim_box_shape_1), dtype=np.float64)
@@ -205,61 +210,62 @@ class SimSequence:
 
         # start the Kernel:
 
-        step_data = (self.get_data('Bz', 0, cast_to=np.dtype('float64'))
-                     * self.get_data('n_e', 0, cast_to=np.dtype('float64')))
-        if swap_axis:
-            step_data = _switch_axis(step_data, order_in_index, desired_order)
+        step_data = (self.get_data('Bz', 0, cast_to=np.dtype('float64'), transform=transform)
+                     * self.get_data('n_e', 0, cast_to=np.dtype('float64'), transform=transform))
+
         kernel = Kernel2D(step_data, output, pulse, factor, self.global_start, self.global_end,
                           interpolation=interpolation, inc_sym=False, add=True)
+
         # rotate with the first slice:
-        # TODO: maybe put it in the loop, by allowing kernel initialization without specifying the input?
         kernel.propagate_step(self.slices[0][0], self.slices[0][1])
 
         # do the other steps:
         for step in range(1, self.number_of_steps):
-            step_data = (self.get_data('Bz', step, cast_to=np.dtype('float64'))
-                         * self.get_data('n_e', step, cast_to=np.dtype('float64')))
-            if swap_axis:
-                step_data = _switch_axis(step_data, order_in_index, desired_order)
+            step_data = (self.get_data('Bz', step, cast_to=np.dtype('float64'), transform=transform)
+                         * self.get_data('n_e', step, cast_to=np.dtype('float64'), transform=transform))
+
             step_interval = self.slices[step]
             kernel.input = step_data
             kernel.propagate_step(step_interval[0], step_interval[1])
 
         return output
 
-    def rotation_3d_perp(self, pulse, wavelength: float, second_axis_output: str, x_ray_axis: str) -> np.ndarray:
+    def rotation_3d_perp(self, pulse, wavelength: float, second_axis_output: str) -> np.ndarray:
 
-        acceptable_names = ['x', 'y', 'z']
-        if second_axis_output not in acceptable_names:
+        if second_axis_output not in self._acceptable_names:
             raise ValueError("`first_axis_output` hast to be 'x' or 'y' or 'z'.")
-        if x_ray_axis not in acceptable_names:
-            raise ValueError("`x_ray_axis` hast to be 'x' or 'y' or 'z'.")
-        b_field_component: str = 'B' + x_ray_axis
-        # Axis order in the loaded data.
-        b_axis_order = self.get_files(b_field_component).axis_order
-        n_e_axis_order = self.get_files('n_e').axis_order
+        b_field_component: str = 'B' + self.propagation_axis
         # x_ray_axis has to be the last one, second_axis_output has to be the second
 
-        last_axis = acceptable_names
-        for ax in [second_axis_output, x_ray_axis]:
-            idx = last_axis.index(ax)
+        last_axis = self._acceptable_names
+        for axis in [second_axis_output, self.propagation_axis]:
+            idx = last_axis.index(axis)
             last_axis.pop(idx)
         assert len(last_axis) == 1
         last_axis = last_axis[0]
-        desired_order = {x_ray_axis: 2, second_axis_output: 1, last_axis: 0}
+        desired_order = {self.propagation_axis: 2, second_axis_output: 1, last_axis: 0}
         desired_order = AxisOrder(**desired_order)
-        output = np.zeros()
+        if self.axis_order != desired_order:
+            transform = partial(_switch_axis, current_order=self.axis_order, desired_order=desired_order)
+            ax: int = dict(self.axis_order)[last_axis]
+            output_dim_0 = self.axis_order[ax]
+            ax: int = dict(self.axis_order)[second_axis_output]
+            output_dim_1 = self.axis_order[ax]
+        else:
+            transform = None
+            output_dim_0 = self.sim_box_shape[0]
+            output_dim_1 = self.sim_box_shape[1]
+
+        output = np.zeros((output_dim_0, output_dim_1), dtype=np.float64)
         for step in range(self.number_of_steps):
             # TODO add chunks.
-            data_b = self.get_data(b_field_component, step)  # cast_to ? needed if we introduce cython.
-            data_n = self.get_data('n_e', step)
-            if b_axis_order != desired_order:
-                data_b = _switch_axis(data_b, b_axis_order, desired_order)
-            if n_e_axis_order != desired_order:
-                data_n = _switch_axis(data_n, n_e_axis_order, desired_order)
+            # cast_to ? needed if we introduce cython., same for make_contiguous
+            data_b = self.get_data(b_field_component, step, transform=transform, make_contiguous=False)
+            data_n = self.get_data('n_e', step, transform=transform, make_contiguous=False)
             data = data_b * data_n
             step_interval = self.slices[step]
             kernel3d(pulse, data, output, self.global_start, self.global_end, step_interval[0], step_interval[1])
+        output *= self.integration_factor(wavelength)
         return output
 
 
@@ -274,7 +280,7 @@ def _get_params_and_check(files: GenericList, propagation_axis: str, start: int,
 
 
 def seq_cells(start: int, end: int, inc_time: float, iter_step: int, pulse_length_cells: int, files: SimFiles,
-                propagation_axis: str)-> SimSequence:
+              propagation_axis: str)-> SimSequence:
     """Creates a SimSequence for the given parameters. Start, end in cells.
 
     Args:
