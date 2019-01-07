@@ -7,10 +7,10 @@ from warnings import warn
 
 Shape = Union[Tuple[int, int], Tuple[int, int, int]]
 
-class AxisOrder(NamedTuple):
-    x: int
-    y: int
-    z: Optional[int] = None  # In case we need it for the 2D case as well.
+# class AxisOrder(NamedTuple):
+#     x: int
+#     y: int
+#     z: Optional[int] = None  # In case we need it for the 2D case as well.
 
 class GenericList:
     """ A generic class for a list of simulation files. All lists should inherit from it.
@@ -32,14 +32,17 @@ class GenericList:
         self.grid = grid
         self.sim_box_shape = sim_box_shape
         self.data_stored = data_stored
+        self.axis_order = {}
         if self.data_dim == 2:
-            self.axis_order = AxisOrder(axis_order.index('x'),
-                                        axis_order.index('y'))
-
-        if self.data_dim == 3:
-            self.axis_order = AxisOrder(axis_order.index('x'),
-                                        axis_order.index('y'),
-                                        axis_order.index('z'))
+            for idx, axis in enumerate(axis_order):
+                self.axis_order[axis] = idx
+        #     self.axis_order = AxisOrder(axis_order.index('x'),
+        #                                 axis_order.index('y'))
+        #
+        # if self.data_dim == 3:
+        #     self.axis_order = AxisOrder(axis_order.index('x'),
+        #                                 axis_order.index('y'),
+        #                                 axis_order.index('z'))
 
 
     @property

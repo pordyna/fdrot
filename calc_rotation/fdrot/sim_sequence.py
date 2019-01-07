@@ -15,10 +15,15 @@ from .sim_data import GenericList
 from . import spliters
 from .Kernel2D import Kernel2D
 from .kernel3d import kernel3d
-from.sim_data import AxisOrder
+# from.sim_data import AxisOrder
 
 SimFiles = Union[GenericList, Mapping[str, GenericList]]
 # TODO: maybe change Mapping[str, GenericList] to a named tuple?
+
+class AxisOrder(NamedTuple):
+    x: int
+    y: int
+    z: Optional[int] = None  # In case we need it for the 2D case as well.
 
 def _switch_axis(array: np.ndarray, current_order: AxisOrder, desired_order: AxisOrder) -> np.ndarray:
     return np.moveaxis(array, current_order, desired_order)
@@ -79,7 +84,7 @@ class SimSequence:
         # n_e is always needed.
         self.sim_box_shape = self.get_files('n_e').sim_box_shape
         self.axis_order = self.get_files('n_e').axis_order
-        ax: int = dict(self.axis_order)[self.propagation_axis]
+        ax: int = self.axis_order[self.propagation_axis]
         self.cell_length_in_prop_direction = self.get_files('n_e').grid[ax]
 
     def step_to_iter(self, step: int) -> int:
@@ -192,7 +197,7 @@ class SimSequence:
         ax_2 = ax_2[0]
         desired_order = {self.propagation_axis: 1, ax_2: 0}
         desired_order = AxisOrder(**desired_order)
-        order_in_index = files_bz.axis_order
+        order_in_index = AxisOrder(**self.axis_order)
 
         if desired_order != order_in_index:
             sim_box_shape_0 = files_bz.sim_box_shape[1]
@@ -245,11 +250,12 @@ class SimSequence:
         last_axis = last_axis[0]
         desired_order = {self.propagation_axis: 2, second_axis_output: 1, last_axis: 0}
         desired_order = AxisOrder(**desired_order)
+        order_in_index = AxisOrder(**self.axis_order)
         if self.axis_order != desired_order:
-            transform = partial(_switch_axis, current_order=self.axis_order, desired_order=desired_order)
-            ax: int = dict(self.axis_order)[last_axis]
+            transform = partial(_switch_axis, current_order=order_in_index, desired_order=desired_order)
+            ax: int = self.axis_order[last_axis]
             output_dim_0 = self.axis_order[ax]
-            ax: int = dict(self.axis_order)[second_axis_output]
+            ax: int = self.axis_order[second_axis_output]
             output_dim_1 = self.axis_order[ax]
         else:
             transform = None
