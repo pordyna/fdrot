@@ -278,7 +278,7 @@ class SimSequence:
 def _get_params_and_check(files: GenericList, propagation_axis: str, start: int, end: int):
 
     dt = files.single_time_step
-    ax = dict(files.axis_order)[propagation_axis]
+    ax = files.axis_order[propagation_axis]
     grid_unit = files.grid[ax]
     if start > files.sim_box_shape[ax] or end > files.sim_box_shape[ax] + 1:
         raise ValueError("(start, end) outside the simulation box.")
