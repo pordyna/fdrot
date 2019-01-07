@@ -28,8 +28,9 @@ class UniversalSingle(GenericList):
 
     """
     def __init__(self, path: str, data_stored: str, single_time_step: float, grid_unit: float,
-                 name_front: str, name_end: str, export_func: Callable[[str, int], np.ndarray], ids: Optional[Sequence[int]] = None,
-                 sim_box_shape: Optional[Tuple[int, int]] = None, axis_map: Optional[Sequence[str]] = None) -> None:
+                 name_front: str, name_end: str, export_func: Callable[[str, int], np.ndarray], axis_map: Sequence[str],
+                 ids: Optional[Sequence[int]] = None,
+                 sim_box_shape: Optional[Tuple[int, int]] = None) -> None:
         """ Initializes UniversalSingle object.
 
         If available iterations are not specified, they are obtained from file names.
