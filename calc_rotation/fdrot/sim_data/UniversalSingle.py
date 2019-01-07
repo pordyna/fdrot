@@ -27,7 +27,7 @@ class UniversalSingle(GenericList):
 
 
     """
-    def __init__(self, path: str, data_stored: str, single_time_step: float, grid_unit: float,
+    def __init__(self, path: str, data_stored: str, single_time_step: float, grid: Sequence[float],
                  name_front: str, name_end: str, export_func: Callable[[str, int], np.ndarray], axis_map: Sequence[str],
                  ids: Optional[Sequence[int]] = None,
                  sim_box_shape: Optional[Tuple[int, int]] = None) -> None:
@@ -40,10 +40,10 @@ class UniversalSingle(GenericList):
         self.name_end = name_end
 
         if ids is None:
-            super().__init__(single_time_step, [0], grid_unit, sim_box_shape, [data_stored], axis_map=axis_map)
+            super().__init__(single_time_step, [0], grid, sim_box_shape, [data_stored], axis_order=axis_map)
             self.find_ids()
         else:
-            super().__init__(single_time_step, ids, grid_unit, sim_box_shape, [data_stored], axis_map=axis_map)
+            super().__init__(single_time_step, ids, grid, sim_box_shape, [data_stored], axis_order=axis_map)
 
         self.export_func = export_func
 
