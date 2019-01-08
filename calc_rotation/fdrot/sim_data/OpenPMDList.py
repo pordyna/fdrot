@@ -22,39 +22,64 @@ class OpenPMDList(GenericList):
     def __init__(self, series: openPMD.Series, data_stored: Sequence,
                  single_time_step: Optional[float],
                  sim_box_shape: Optional[Tuple[int, int]],
-                 grid_unit: Optional[int]):
+                 grid: Optional[Sequence[float]] = None, axis_map: Optional[Sequence[str]] = None,
+                 fields_mapping: Optional[dict] = None):
         """Initializes an OpenPMDList object.
 
         Optional arguments, if they are not specified, are obtained from the series."""
         # Maps the fields to their location in the openPMD container. The location is specified
         # as a tuple of group names.
-        self._fields_mapping = {'Bx': ('B', 'x'), 'By': ('B', 'y'), 'Bz': ('B', 'z'), 'n_e': ('e_density',)}
+        if fields_mapping is None:
+            self.fields_mapping = {'Bx': ('B', 'x'), 'By': ('B', 'y'),
+                                   'Bz': ('B', 'z'), 'n_e': ('e_density', r'\x0bScalar')}
+        else: self.fields_mapping = fields_mapping
         self.series = series
         ids = series.iterations.items
 
         # Obtaining the parameters from the series. It's assumed that, they stay the same, for the whole series.
+        if axis_map is None:
+            key = self.fields_mapping[data_stored[0]][0]
+            axis_map = series.iterations[ids[0]][key].axis_labels
         if single_time_step is None:
-            single_time_step = series.iterations[ids[0]].dt
+            single_time_step = series.iterations[ids[0]].dt() * series.iterations[ids[0]].time_unit_SI
         if sim_box_shape is None:
             sim_box_shape = tuple(self._get_mesh_record(ids[0], data_stored[0]).shape)
-        if grid_unit is None:
-            key = self._fields_mapping[data_stored[0]][0]
-            grid_unit = series.iterations[ids[0]][key].grid_unit_SI
-        super().__init__(single_time_step, ids, grid_unit, sim_box_shape, data_stored)
+        if grid is None:
+            key = self.fields_mapping[data_stored[0]][0]
+            unit = series.iterations[ids[0]][key].grid_unit_SI
+            spacing = series.iterations[ids[0]][key].grid_spacing
+            grid = tuple(unit * np.asarray(spacing))
+        super().__init__(single_time_step, ids, grid, sim_box_shape, data_stored, axis_order=axis_map)
 
-    def _get_mesh_record(self, iteration: int, field: str ) -> openPMD.Mesh:
+    def _get_mesh_record(self, iteration: int, field: str) -> openPMD.Mesh:
         """Returns the mesh from the series, for a specific iteration and field."""
         mesh = self.series.iterations[iteration]
-        for key in self._fields_mapping[field]:
+        for key in self.fields_mapping[field]:
             mesh = mesh[key]
         return mesh
 
-    def open(self, iteration: int, field: str) -> np.ndarray:
+    def open(self, iteration: int, field: str,
+             dim1_cut: Optional[Tuple[int, int]] = None,
+             dim2_cut: Optional[Tuple[int, int]] = None,
+             dim3_cut: Optional[Tuple[int, int]] = None) -> np.ndarray:
         """Opens the field data, for a specific iteration and field, as a numpy array."""
+
         field = field.strip()
         if field not in self.data_stored:
             raise ValueError("This FilesList object is not set to store this type of a simulation data.")
 
+        if dim1_cut is None:
+            dim1_cut = (0, self.sim_box_shape[0])
+        if dim2_cut is None:
+            dim2_cut = (0, self.sim_box_shape[1])
+        if dim3_cut is None and self.data_dim == 3:
+            dim3_cut = (0, self.sim_box_shape[2])
+
         data = self._get_mesh_record(iteration, field)
-        data = data.load_chunk([0, 0], self.sim_box_shape)  # TODO: 3D
+        if self.data_dim == 3:
+            offset = [dim1_cut[0], dim2_cut[0], dim3_cut[0]]
+        else:
+            offset = [dim1_cut[0], dim2_cut[0]]
+        data = data.load_chunk(offset, (dim1_cut[1], dim2_cut[1], dim3_cut[1]))
+        self.series.flush()
         return data

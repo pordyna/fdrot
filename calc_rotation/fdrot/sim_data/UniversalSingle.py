@@ -27,8 +27,9 @@ class UniversalSingle(GenericList):
 
 
     """
-    def __init__(self, path: str, data_stored: str, single_time_step: float, grid_unit: float,
-                 name_front: str, name_end: str, export_func: Callable[[str, int], np.ndarray], ids: Optional[Sequence[int]] = None,
+    def __init__(self, path: str, data_stored: str, single_time_step: float, grid: Sequence[float],
+                 name_front: str, name_end: str, export_func: Callable[[str, int], np.ndarray], axis_map: Sequence[str],
+                 ids: Optional[Sequence[int]] = None,
                  sim_box_shape: Optional[Tuple[int, int]] = None) -> None:
         """ Initializes UniversalSingle object.
 
@@ -39,10 +40,10 @@ class UniversalSingle(GenericList):
         self.name_end = name_end
 
         if ids is None:
-            super().__init__(single_time_step, [0], grid_unit, sim_box_shape, [data_stored])
+            super().__init__(single_time_step, [0], grid, sim_box_shape, [data_stored], axis_order=axis_map)
             self.find_ids()
         else:
-            super().__init__(single_time_step, ids, grid_unit, sim_box_shape, [data_stored])
+            super().__init__(single_time_step, ids, grid, sim_box_shape, [data_stored], axis_order=axis_map)
 
         self.export_func = export_func
 
@@ -101,16 +102,27 @@ class UniversalSingle(GenericList):
                 print("All files exist.")
         return ok, bad_ids
 
-    def open(self, iteration: int, field: str) -> np.ndarray:
+    def open(self, iteration: int, field: str,
+             dim1_cut: Optional[Tuple[int, int]] = None,
+             dim2_cut: Optional[Tuple[int, int]] = None,
+             dim3_cut: Optional[Tuple[int, int]] = None) -> np.ndarray:
         """Opens the field data, for a specific iteration., as a numpy array."""
+
         field = field.strip()
         if field not in self.data_stored:
             raise ValueError("This FilesList object is not set to store this type of a simulation data.")
 
+        if dim1_cut is None:
+            dim1_cut = (0, self.sim_box_shape[0])
+        if dim2_cut is None:
+            dim2_cut = (0, self.sim_box_shape[1])
+        if dim3_cut is None and self.data_dim == 3:
+            dim3_cut = (0, self.sim_box_shape[2])
+
         data = self.export_func(self.full_path(iteration), iteration)
-        if self.sim_box_shape is None:
-            self.sim_box_shape = data.shape
-        else:
-            if self.sim_box_shape != data.shape:
-                raise ValueError('Shape of the opened array is different than the `sim_box_shape` Attribute.')
-        return data
+
+        if self.sim_box_shape != data.shape:
+            raise ValueError('Shape of the opened array is different than the `sim_box_shape` Attribute.')
+        cut_data = data[dim1_cut[0]:dim1_cut[1], dim2_cut[0]:dim2_cut[1], dim3_cut[0]:dim3_cut[1]]
+
+        return cut_data

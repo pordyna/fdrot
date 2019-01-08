@@ -4,8 +4,9 @@ It provides tools for managing and creating sequences of time steps
 and propagating over them.
 """
 
-from typing import Union, Tuple, Sequence, MutableSequence, Mapping
+from typing import Union, Tuple, Sequence, Mapping, NamedTuple, Optional, Callable, List
 from warnings import warn
+from functools import partial
 import math
 
 import numpy as np
@@ -13,12 +14,23 @@ from scipy.constants import electron_mass, speed_of_light, elementary_charge, ep
 from .sim_data import GenericList
 from . import spliters
 from .Kernel2D import Kernel2D
+from .kernel3d import kernel3d
+# from.sim_data import AxisOrder
 
 SimFiles = Union[GenericList, Mapping[str, GenericList]]
 # TODO: maybe change Mapping[str, GenericList] to a named tuple?
 
+class AxisOrder(NamedTuple):
+    x: int
+    y: int
+    z: Optional[int] = None  # In case we need it for the 2D case as well.
+
+def _switch_axis(array: np.ndarray, current_order: AxisOrder, desired_order: AxisOrder) -> np.ndarray:
+    return np.moveaxis(array, current_order, desired_order)
 
 # naming: maybe different class name? It's not a Sequence like typing.Sequence.
+
+
 class SimSequence:
     """ A sequence of time steps, mapped to the simulation data. Stores some simulation parameters.
 
@@ -33,8 +45,9 @@ class SimSequence:
         files: It can be a single files list (see the sim_data module), if it provides all the fields,
          or a mapping of lists to the fields. Acceptable keys are 'Bz' and 'n_e'.
         pulse_length_cells: Length of the pulse in cells.
+        propagation_axis:...
     """
-    def __init__(self, files: SimFiles, pulse_length_cells: int, iteration: Tuple[int, int, int],
+    def __init__(self, files: SimFiles, pulse_length_cells: int, propagation_axis: str, iteration: Tuple[int, int, int],
                  slices: Sequence[Tuple[int,int]], global_start: int,
                  global_end: int) -> None:
         """ Initializes a SimSequence object.
@@ -43,13 +56,36 @@ class SimSequence:
         first_iteration, iter_step and number_of_steps are passed in the iteration tuple.
         """
         self.first_iteration, self.iter_step, self.number_of_steps = iteration
-        self.slices = slices
-        self.global_start = global_start
-        self.global_end = global_end
-        self.files = files
-        self.pulse_length_cells = pulse_length_cells
+        self.slices: Sequence[Tuple[int, int]] = slices
+        self.global_start: int = global_start
+        self.global_end: int = global_end
+        self.files: SimFiles = files
+        self.pulse_length_cells: int = pulse_length_cells
+        self._acceptable_names = ['x', 'y', 'z']
+        if propagation_axis not in self._acceptable_names:
+            raise ValueError("`x_ray_axis` hast to be 'x' or 'y' or 'z'.")
+        self.propagation_axis: str = propagation_axis
+        
         if not self.check_iterations():
             raise ValueError("Iterations missing in the file index.")
+
+        if isinstance(self.files, Mapping):
+            shapes = []
+            axis_orders = []
+            grids = []
+            for file_index in self.files.values():
+                shapes.append(file_index.sim_box_shape)
+                axis_orders.append(AxisOrder(**file_index.axis_order))
+                grids.append(file_index.grid)
+            assert len(set(shapes)) == 1, "All file lists should have the same `sim_box_shape` attr. ."
+            assert len(set(axis_orders)) == 1, "All file lists should have the same `axis_order` attr. ."
+            assert len(set(grids)) == 1, "All file lists should have the same `grid` attr. ."
+
+        # n_e is always needed.
+        self.sim_box_shape = self.get_files('n_e').sim_box_shape
+        self.axis_order = self.get_files('n_e').axis_order
+        ax: int = self.axis_order[self.propagation_axis]
+        self.cell_length_in_prop_direction = self.get_files('n_e').grid[ax]
 
     def step_to_iter(self, step: int) -> int:
         """ Returns the iteration number for the given step."""
@@ -73,9 +109,10 @@ class SimSequence:
         missing = []
         for step in range(self.number_of_steps):
             idd = self.step_to_iter(step)
-            for field in ('Bz', 'n_e'):
-                if idd not in self.get_files(field).ids:
-                    missing.append((step, idd, field))
+            if isinstance(self.files, Mapping):
+                for field, file in self.files.items():
+                    if idd not in file.ids:
+                        missing.append((step, idd, field))
         ok = not bool(missing)
         if not ok:
             print("Those iterations are missing, (step, iteration, field):")
@@ -83,12 +120,19 @@ class SimSequence:
         return ok
 
     def get_data(self, field: str, steps: Union[int, Sequence[int], str],
-                 make_contiguous: bool = True)-> Union[np.ndarray, MutableSequence[np.ndarray]]:
+                 transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+                 make_contiguous: bool = True,
+                 cast_to: Optional[np.dtype] = None,
+                 dim1_cut: Optional[Tuple[int, int]] = None,
+                 dim2_cut: Optional[Tuple[int, int]] = None,
+                 dim3_cut: Optional[Tuple[int, int]] = None)-> Union[np.ndarray, List[np.ndarray]]:
         """Returns the field data for one or more steps.
 
+        transform: use it for any transformation that could change contiguity.
         If make_contiguous is set to True, the 'C_CONTIGUOUS' flag is checked and, if needed, a
         contiguous (in the row major) copy is returned.
          """
+        args_open = (dim1_cut, dim2_cut, dim3_cut)
         try:
             steps.strip()
         except AttributeError:
@@ -104,13 +148,17 @@ class SimSequence:
                                  ' a sequence of integers or \'all\'.')
         data = [len(steps)]
         for ii,  step in enumerate(steps):
-            data[ii] = self.get_files(field).open(self.step_to_iter(step), field)
-            # This must be removed when single precision is also supported. Problems with fused types.
-            if data[ii].dtype != np.float64:
-                data[ii] = data[ii].astype(np.float64)
+            data[ii] = self.get_files(field).open(self.step_to_iter(step), field, *args_open)
+            if cast_to is not None:
+                if data[ii].dtype < cast_to:
+                    data[ii] = data[ii].astype(cast_to)
+                if data[ii].dtype > cast_to:
+                    raise TypeError("Data for the iteration {} can't be safely cast to the desired type.".format(ii))
+            if transform is not None:
+                data[ii] = transform(data[ii])
         if make_contiguous:
             for ii, step in enumerate(data):
-                if not  step.flags['C_CONTIGUOUS']:
+                if not step.flags['C_CONTIGUOUS']:
                     warn('At least one array was not C_Contiguous.')
                     data[ii] = np.ascontiguousarray(step)
         if len(data) == 1:
@@ -120,8 +168,7 @@ class SimSequence:
     def integration_factor(self, wavelength):
         critical_density = electron_mass * epsilon_0 * ((2 * math.pi * speed_of_light)
                                                         / (elementary_charge * wavelength))**2
-        files_bz = self.get_files('Bz')
-        delta_x = files_bz.grid_unit
+        delta_x = self.cell_length_in_prop_direction
         return elementary_charge / (2 * speed_of_light * electron_mass) / critical_density * delta_x
 
     def rotation_2d_perp(self, pulse: np.ndarray, wavelength: float, interpolation: bool = True) -> np.ndarray:
@@ -133,43 +180,113 @@ class SimSequence:
             interpolation: Turns interpolation on and off.
         Returns: rotation data
         """
-        if pulse.size != self.pulse_length_cells:
-            raise ValueError("This sequence was generated for a different pulse length ")
 
         # need one files list to get the correct output shape:
-        files_bz = self.get_files('Bz')
+        files_bz = self.get_files('n_e')
+        assert files_bz.data_dim == 2, "This method works only  with 2 dimensional data."
+
+        if pulse.size != self.pulse_length_cells:
+            raise ValueError("This sequence was generated for a different pulse length ")
+        if pulse.dtype < np.dtype('float64'):
+            pulse = pulse.astype(np.float64)
+
+        # check if axis swap is needed:
+        # swap axis and swap sim_box_shape
+        labels = ['x', 'y']
+        ax_2 = labels.pop(labels.index(self.propagation_axis))
+        ax_2 = ax_2[0]
+        desired_order = {self.propagation_axis: 1, ax_2: 0}
+        desired_order = AxisOrder(**desired_order)
+        order_in_index = AxisOrder(**self.axis_order)
+
+        if desired_order != order_in_index:
+            sim_box_shape_0 = files_bz.sim_box_shape[1]
+            sim_box_shape_1 = files_bz.sim_box_shape[0]
+            transform = partial(_switch_axis,  current_order=order_in_index, desired_order=desired_order)
+        else:
+            sim_box_shape_0 = files_bz.sim_box_shape[0]
+            sim_box_shape_1 = files_bz.sim_box_shape[1]
+            transform = None
+
         # create output:
-        # TODO: When fused types start to work, allow single precision output.
-        output = np.zeros((files_bz.sim_box_shape[0] * files_bz.sim_box_shape[1]), dtype=np.float64)
-        output = output.reshape((files_bz.sim_box_shape[1], files_bz.sim_box_shape[0]))
+        output = np.zeros((sim_box_shape_0 * sim_box_shape_1), dtype=np.float64)
+        output = output.reshape((sim_box_shape_1, sim_box_shape_0))
         factor = self.integration_factor(wavelength)
 
         # start the Kernel:
-        step_data = self.get_data('Bz', 0) * self.get_data('n_e', 0)
+
+        step_data = (self.get_data('Bz', 0, cast_to=np.dtype('float64'), transform=transform)
+                     * self.get_data('n_e', 0, cast_to=np.dtype('float64'), transform=transform))
+
         kernel = Kernel2D(step_data, output, pulse, factor, self.global_start, self.global_end,
                           interpolation=interpolation, inc_sym=False, add=True)
+
         # rotate with the first slice:
-        # TODO: maybe put it in the loop, by allowing kernel initialization without specifying the input?
         kernel.propagate_step(self.slices[0][0], self.slices[0][1])
 
         # do the other steps:
         for step in range(1, self.number_of_steps):
-            step_data = self.get_data('Bz', step) * self.get_data('n_e', step)
+            step_data = (self.get_data('Bz', step, cast_to=np.dtype('float64'), transform=transform)
+                         * self.get_data('n_e', step, cast_to=np.dtype('float64'), transform=transform))
+
             step_interval = self.slices[step]
             kernel.input = step_data
             kernel.propagate_step(step_interval[0], step_interval[1])
 
         return output
 
+    def rotation_3d_perp(self, pulse, wavelength: float, second_axis_output: str) -> np.ndarray:
 
-def _get_params(files: GenericList):
+        if second_axis_output not in self._acceptable_names:
+            raise ValueError("`second_axis_output` hast to be 'x' or 'y' or 'z'.")
+        b_field_component: str = 'B' + self.propagation_axis
+        # x_ray_axis has to be the last one, second_axis_output has to be the second
+
+        last_axis = self._acceptable_names.copy()
+        for axis in [second_axis_output, self.propagation_axis]:
+            idx = last_axis.index(axis)
+            last_axis.pop(idx)
+        assert len(last_axis) == 1
+        last_axis = last_axis[0]
+        desired_order = {self.propagation_axis: 2, second_axis_output: 1, last_axis: 0}
+        desired_order = AxisOrder(**desired_order)
+        order_in_index = AxisOrder(**self.axis_order)
+        if self.axis_order != desired_order:
+            transform = partial(_switch_axis, current_order=order_in_index, desired_order=desired_order)
+            ax: int = self.axis_order[last_axis]
+            output_dim_0 = self.sim_box_shape[ax]
+            ax: int = self.axis_order[second_axis_output]
+            output_dim_1 = self.sim_box_shape[ax]
+        else:
+            transform = None
+            output_dim_0 = self.sim_box_shape[0]
+            output_dim_1 = self.sim_box_shape[1]
+
+        output = np.zeros((output_dim_0, output_dim_1), dtype=np.float64)
+        for step in range(self.number_of_steps):
+            # TODO add chunks.
+            # cast_to ? needed if we introduce cython., same for make_contiguous
+            data_b = self.get_data(b_field_component, step, transform=transform, make_contiguous=False)
+            data_n = self.get_data('n_e', step, transform=transform, make_contiguous=False)
+            data = data_b * data_n
+            step_interval = self.slices[step]
+            kernel3d(pulse, data, output, self.global_start, self.global_end, step_interval[0], step_interval[1])
+        output *= self.integration_factor(wavelength)
+        return output
+
+
+def _get_params_and_check(files: GenericList, propagation_axis: str, start: int, end: int):
+
     dt = files.single_time_step
-    grid_unit = files.grid_unit
+    ax = files.axis_order[propagation_axis]
+    grid_unit = files.grid[ax]
+    if start >= files.sim_box_shape[ax] or end > files.sim_box_shape[ax]:
+        raise ValueError("(start, end) outside the simulation box.")
     return dt, grid_unit
 
 
-def seq_cells(start: int, end: int, inc_time: float, iter_step: int, pulse_length_cells: int, files: SimFiles
-              )-> SimSequence:
+def seq_cells(start: int, end: int, inc_time: float, iter_step: int, pulse_length_cells: int, files: SimFiles,
+              propagation_axis: str)-> SimSequence:
     """Creates a SimSequence for the given parameters. Start, end in cells.
 
     Args:
@@ -179,19 +296,21 @@ def seq_cells(start: int, end: int, inc_time: float, iter_step: int, pulse_lengt
         iter_step: Number of simulation iterations in one time step.
         pulse_length_cells: Length of the beam in cells.
         files: It can be a single files list (see the sim_data module), if it provides all the fields,
-         or a mapping of lists to the fields. Acceptable keys are 'Bz' and 'n_e'.
+         or a mapping of lists to the fields. Acceptable keys are 'Bx', 'By', 'Bz' and 'n_e'.
     """
+    # TODO do I need this iter_step?
     # Handling the case with mapping:
     if isinstance(files, Mapping):
-        params = _get_params(list(files.values())[0])
+        params = _get_params_and_check(list(files.values())[0], propagation_axis, start, end)
     else:
-        params = _get_params(files)
+        params = _get_params_and_check(files, propagation_axis, start, end)
 
     args = spliters.cells_perp(start, end, inc_time, iter_step, pulse_length_cells, *params)
-    return SimSequence(files, pulse_length_cells, *args)
+    return SimSequence(files, pulse_length_cells, propagation_axis, *args)
 
 
-def seq_microns(start: int, end: int, inc_time: float, iter_step: int, pulse_length_cells: int, files: SimFiles):
+def seq_microns(start: int, end: int, inc_time: float, iter_step: int, pulse_length_cells: int, files: SimFiles,
+                propagation_axis: str):
     """Creates a SimSequence for the given parameters. Start, end in microns.
 
        Args:
@@ -203,11 +322,11 @@ def seq_microns(start: int, end: int, inc_time: float, iter_step: int, pulse_len
            iter_step: Number of simulation iterations in one time step.
            pulse_length_cells: Length of the beam in cells.
            files: It can be a single files list (see the sim_data module), if it provides all the fields,
-            or a mapping of lists to the fields. Acceptable keys are 'Bz' and 'n_e'.
+            or a mapping of lists to the fields. Acceptable keys are 'Bx', 'By', 'Bz' and 'n_e'.
        """
     if isinstance(files, Mapping):
-        params = _get_params(list(files.values())[0])
+        params = _get_params_and_check(list(files.values())[0], propagation_axis, start, end)
     else:
-        params = _get_params(files)
+        params = _get_params_and_check(files, propagation_axis, start, end)
     args = spliters.micron_perp(start, end, inc_time, iter_step, pulse_length_cells, *params)
-    return SimSequence(files, pulse_length_cells, *args)
+    return SimSequence(files, pulse_length_cells, propagation_axis, *args)
