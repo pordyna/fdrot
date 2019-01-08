@@ -21,16 +21,18 @@ def kernel3d(pulse: np.ndarray,
     :param leading_stop:  Interval stop for the leading slice of the pulse (in a single time step).
     """
     pulse_len = pulse.shape[0]
-    duration = leading_stop - leading_start  # in cells
+    if leading_start < global_start:
+        leading_start = global_start
+    if leading_stop > global_stop:
+        leading_stop = global_stop
+    duration = leading_stop - leading_start + (pulse_len - 1)  # in cells, +/- 1
+    summed = np.zeros(input_arr.shape[1])  # y
     for zz in range(input_arr.shape[0]):
-        summed = np.zeros_like((input_arr.shape[1]))  # y
+        pulse_head = leading_start  # cell where the most right slice of the pulse is. +/- 1
+        pulse_tail = pulse_head - (pulse_len - 1)  # cell where the most left slice of the pulse is. +/- 1
+        summed[:] = 0
         input_slice = input_arr[zz, :, :]  # 2D (y,x)
-        pulse_head = leading_start  # cell where the most right slice of the pulse is.
-        pulse_tail = pulse_head - pulse_len  # cell where the most left slice of the pulse is.
         for tt in range(duration):
-            # propagate by one cell:
-            pulse_head += 1  # cell where the most right slice of the pulse is.
-            pulse_tail += 1  # cell where the most left slice of the pulse is.
             # Let's cut pulse on the global boundaries.
             cut_at_tail = 0  # Cells cut at the pulse tail.
             cut_at_head = 0  # Cells cut at the pulse head.
@@ -40,8 +42,16 @@ def kernel3d(pulse: np.ndarray,
                 cut_at_head, pulse_head = pulse_head - (global_stop - 1), global_stop - 1
 
             # Broadcasting arrays:
-            cut_pulse = pulse[cut_at_tail:-cut_at_head]
+            if cut_at_head == 0:
+                cut_pulse = pulse[cut_at_tail:]
+
+            else:
+                cut_pulse = pulse[cut_at_tail:-cut_at_head]
             slice_chunk = input_slice[:, pulse_tail:pulse_head + 1]  # Take all 'y' cut in 'x'.
             # Faraday Rotation originating from the time interval [tt, tt+1].
             summed += np.dot(slice_chunk, cut_pulse)  # Shapes: (y,x) * (x,) -> (y,)
-        output[-zz, :] += summed  # (y,) + (y,)
+
+            # propagate by one cell:
+            pulse_head += 1  # cell where the most right slice of the pulse is.
+            pulse_tail += 1  # cell where the most left slice of the pulse is.
+        output[zz, :] += summed  # (y,) + (y,) # -zz -> zz

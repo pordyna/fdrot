@@ -238,11 +238,11 @@ class SimSequence:
     def rotation_3d_perp(self, pulse, wavelength: float, second_axis_output: str) -> np.ndarray:
 
         if second_axis_output not in self._acceptable_names:
-            raise ValueError("`first_axis_output` hast to be 'x' or 'y' or 'z'.")
+            raise ValueError("`second_axis_output` hast to be 'x' or 'y' or 'z'.")
         b_field_component: str = 'B' + self.propagation_axis
         # x_ray_axis has to be the last one, second_axis_output has to be the second
 
-        last_axis = self._acceptable_names
+        last_axis = self._acceptable_names.copy()
         for axis in [second_axis_output, self.propagation_axis]:
             idx = last_axis.index(axis)
             last_axis.pop(idx)
@@ -254,9 +254,9 @@ class SimSequence:
         if self.axis_order != desired_order:
             transform = partial(_switch_axis, current_order=order_in_index, desired_order=desired_order)
             ax: int = self.axis_order[last_axis]
-            output_dim_0 = self.axis_order[ax]
+            output_dim_0 = self.sim_box_shape[ax]
             ax: int = self.axis_order[second_axis_output]
-            output_dim_1 = self.axis_order[ax]
+            output_dim_1 = self.sim_box_shape[ax]
         else:
             transform = None
             output_dim_0 = self.sim_box_shape[0]
@@ -280,7 +280,7 @@ def _get_params_and_check(files: GenericList, propagation_axis: str, start: int,
     dt = files.single_time_step
     ax = files.axis_order[propagation_axis]
     grid_unit = files.grid[ax]
-    if start > files.sim_box_shape[ax] or end > files.sim_box_shape[ax] + 1:
+    if start >= files.sim_box_shape[ax] or end > files.sim_box_shape[ax]:
         raise ValueError("(start, end) outside the simulation box.")
     return dt, grid_unit
 
