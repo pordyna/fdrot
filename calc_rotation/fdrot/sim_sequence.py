@@ -26,6 +26,10 @@ class AxisOrder(NamedTuple):
     z: Optional[int] = None  # In case we need it for the 2D case as well.
 
 def _switch_axis(array: np.ndarray, current_order: AxisOrder, desired_order: AxisOrder) -> np.ndarray:
+    if current_order.z is None and desired_order.z is None:
+        current_order = (current_order[0], current_order[1])
+        desired_order = (desired_order[0], desired_order[1])
+
     return np.moveaxis(array, current_order, desired_order)
 
 # naming: maybe different class name? It's not a Sequence like typing.Sequence.
@@ -48,7 +52,7 @@ class SimSequence:
         propagation_axis:...
     """
     def __init__(self, files: SimFiles, pulse_length_cells: int, propagation_axis: str, iteration: Tuple[int, int, int],
-                 slices: Sequence[Tuple[int,int]], global_start: int,
+                 slices: Sequence[Tuple[int, int]], global_start: int,
                  global_end: int) -> None:
         """ Initializes a SimSequence object.
 
@@ -193,8 +197,8 @@ class SimSequence:
         # check if axis swap is needed:
         # swap axis and swap sim_box_shape
         labels = ['x', 'y']
-        ax_2 = labels.pop(labels.index(self.propagation_axis))
-        ax_2 = ax_2[0]
+        labels.pop(labels.index(self.propagation_axis))
+        ax_2 =labels[0]
         desired_order = {self.propagation_axis: 1, ax_2: 0}
         desired_order = AxisOrder(**desired_order)
         order_in_index = AxisOrder(**self.axis_order)
