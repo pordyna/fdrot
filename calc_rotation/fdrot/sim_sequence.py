@@ -127,16 +127,13 @@ class SimSequence:
                  transform: Optional[Callable[[np.ndarray], np.ndarray]] = None,
                  make_contiguous: bool = True,
                  cast_to: Optional[np.dtype] = None,
-                 dim1_cut: Optional[Tuple[int, int]] = None,
-                 dim2_cut: Optional[Tuple[int, int]] = None,
-                 dim3_cut: Optional[Tuple[int, int]] = None)-> Union[np.ndarray, List[np.ndarray]]:
+                 dim_cut: Optional[Sequence[Tuple[int, int]]] = None)-> Union[np.ndarray, List[np.ndarray]]:
         """Returns the field data for one or more steps.
 
         transform: use it for any transformation that could change contiguity.
         If make_contiguous is set to True, the 'C_CONTIGUOUS' flag is checked and, if needed, a
         contiguous (in the row major) copy is returned.
          """
-        args_open = (dim1_cut, dim2_cut, dim3_cut)
         try:
             steps.strip()
         except AttributeError:
@@ -152,7 +149,7 @@ class SimSequence:
                                  ' a sequence of integers or \'all\'.')
         data = [len(steps)]
         for ii,  step in enumerate(steps):
-            data[ii] = self.get_files(field).open(self.step_to_iter(step), field, *args_open)
+            data[ii] = self.get_files(field).open(self.step_to_iter(step), field, *dim_cut)
             if cast_to is not None:
                 if data[ii].dtype < cast_to:
                     data[ii] = data[ii].astype(cast_to)
@@ -227,8 +224,8 @@ class SimSequence:
 
         # start the Kernel:
 
-        step_data = (self.get_data('Bz', 0, cast_to=np.dtype('float64'), transform=transform, *dim_cut)
-                     * self.get_data('n_e', 0, cast_to=np.dtype('float64'), transform=transform, *dim_cut))
+        step_data = (self.get_data('Bz', 0, cast_to=np.dtype('float64'), transform=transform, dim_cut=dim_cut)
+                     * self.get_data('n_e', 0, cast_to=np.dtype('float64'), transform=transform, dim_cut=dim_cut))
 
         kernel = Kernel2D(step_data, output, pulse, factor, self.global_start, self.global_end,
                           interpolation=interpolation, inc_sym=False, add=True)
@@ -238,8 +235,8 @@ class SimSequence:
 
         # do the other steps:
         for step in range(1, self.number_of_steps):
-            step_data = (self.get_data('Bz', step, cast_to=np.dtype('float64'), transform=transform, *dim_cut)
-                         * self.get_data('n_e', step, cast_to=np.dtype('float64'), transform=transform, *dim_cut))
+            step_data = (self.get_data('Bz', step, cast_to=np.dtype('float64'), transform=transform, dim_cut=dim_cut)
+                         * self.get_data('n_e', step, cast_to=np.dtype('float64'), transform=transform, dim_cut=dim_cut))
 
             step_interval = self.slices[step]
             kernel.input = step_data
@@ -299,8 +296,8 @@ class SimSequence:
         for step in range(self.number_of_steps):
             # TODO add chunks.
             # cast_to ? needed if we introduce cython., same for make_contiguous
-            data_b = self.get_data(b_field_component, step, transform=transform, make_contiguous=False, *dim_cut)
-            data_n = self.get_data('n_e', step, transform=transform, make_contiguous=False, *dim_cut)
+            data_b = self.get_data(b_field_component, step, transform=transform, make_contiguous=False, dim_cut=dim_cut)
+            data_n = self.get_data('n_e', step, transform=transform, make_contiguous=False, dim_cut=dim_cut)
             data = data_b * data_n
             step_interval = self.slices[step]
             local_start = 0
