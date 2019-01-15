@@ -66,8 +66,8 @@ cdef class Kernel2D:
         self.global_interval.start = global_start
         self.global_interval.stop =  global_end
 
-        assert self.r_len == output_d.shape[0]
-        assert self.s_len == output_d.shape[1]
+        assert self.r_len == output_d.shape[0], 'r_len:{}, output_d.shape[0]:{}'.format(self.r_len, output_d.shape[0])
+        assert self.s_len == output_d.shape[1], 'r_len:{}, output_d.shape[0]:{}'.format(self.s_len, output_d.shape[1])
 
         self.r_len_half = self.r_len // 2
 

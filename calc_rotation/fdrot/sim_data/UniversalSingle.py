@@ -123,7 +123,7 @@ class UniversalSingle(GenericList):
 
         if self.sim_box_shape != data.shape:
             raise ValueError('Shape of the opened array is different than the `sim_box_shape` Attribute.')
-        if self.data_dim ==3:
+        if self.data_dim == 3:
             cut_data = data[dim1_cut[0]:dim1_cut[1], dim2_cut[0]:dim2_cut[1], dim3_cut[0]:dim3_cut[1]]
         else:
             cut_data = data[dim1_cut[0]:dim1_cut[1], dim2_cut[0]:dim2_cut[1]]
