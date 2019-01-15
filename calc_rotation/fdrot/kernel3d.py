@@ -1,6 +1,9 @@
 import numpy as np
+from numba import njit, prange
+import importlib # since Python 3.4
 
 
+@njit(parallel=True, cache=True)
 def kernel3d(pulse: np.ndarray,
              input_arr: np.ndarray,
              output: np.ndarray,
@@ -26,32 +29,32 @@ def kernel3d(pulse: np.ndarray,
     if leading_stop > global_stop:
         leading_stop = global_stop
     duration = leading_stop - leading_start + (pulse_len - 1)  # in cells, +/- 1
-    summed = np.zeros(input_arr.shape[1])  # y
-    for zz in range(input_arr.shape[0]):
-        pulse_head = leading_start  # cell where the most right slice of the pulse is. +/- 1
-        pulse_tail = pulse_head - (pulse_len - 1)  # cell where the most left slice of the pulse is. +/- 1
-        summed[:] = 0
+    pulse_head = leading_start  # cell where the most right slice of the pulse is. +/- 1
+    pulse_tail = pulse_head - (pulse_len - 1)  # cell where the most left slice of the pulse is. +/- 1
+    for zz in prange(input_arr.shape[0]):
+        summed = np.zeros(input_arr.shape[1])  # y
         input_slice = input_arr[zz, :, :]  # 2D (y,x)
-        for tt in range(duration):
+        for tt in prange(duration):
+            # Assigned variables in prange loops are private; pulse_head, pulse_tail can only be read here, so
+            # they stay global and available in the loop.
+            pulse_head_private = pulse_head + tt  # cell where the most right slice of the pulse is.
+            pulse_tail_private = pulse_tail + tt  # cell where the most left slice of the pulse is.
             # Let's cut pulse on the global boundaries.
             cut_at_tail = 0  # Cells cut at the pulse tail.
             cut_at_head = 0  # Cells cut at the pulse head.
-            if pulse_tail < global_start:
-                cut_at_tail, pulse_tail = global_start - pulse_tail, global_start
-            if pulse_head > global_stop - 1:
-                cut_at_head, pulse_head = pulse_head - (global_stop - 1), global_stop - 1
+            if pulse_tail_private < global_start:
+                cut_at_tail, pulse_tail_private = global_start - pulse_tail_private, global_start
+            if pulse_head_private > global_stop - 1:
+                cut_at_head, pulse_head_private = pulse_head_private - (global_stop - 1), global_stop - 1
 
             # Broadcasting arrays:
             if cut_at_head == 0:
                 cut_pulse = pulse[cut_at_tail:]
-
             else:
                 cut_pulse = pulse[cut_at_tail:-cut_at_head]
-            slice_chunk = input_slice[:, pulse_tail:pulse_head + 1]  # Take all 'y' cut in 'x'.
+            slice_chunk = input_slice[:, pulse_tail_private:pulse_head_private + 1]  # Take all 'y' cut in 'x'.
             # Faraday Rotation originating from the time interval [tt, tt+1].
-            summed += np.dot(slice_chunk, cut_pulse)  # Shapes: (y,x) * (x,) -> (y,)
-
+            summed += np.dot(slice_chunk, cut_pulse)  # Shapes: (y,x) * (x,) -> (y,) # prange reduction
             # propagate by one cell:
-            pulse_head += 1  # cell where the most right slice of the pulse is.
-            pulse_tail += 1  # cell where the most left slice of the pulse is.
-        output[zz, :] += summed  # (y,) + (y,) # -zz -> zz
+
+        output[zz, :] += summed  # (y,) + (y,) # -zz -> zz # prange reduction

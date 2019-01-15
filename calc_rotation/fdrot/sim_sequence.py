@@ -26,6 +26,10 @@ class AxisOrder(NamedTuple):
     z: Optional[int] = None  # In case we need it for the 2D case as well.
 
 def _switch_axis(array: np.ndarray, current_order: AxisOrder, desired_order: AxisOrder) -> np.ndarray:
+    if current_order.z is None and desired_order.z is None:
+        current_order = (current_order[0], current_order[1])
+        desired_order = (desired_order[0], desired_order[1])
+
     return np.moveaxis(array, current_order, desired_order)
 
 # naming: maybe different class name? It's not a Sequence like typing.Sequence.
@@ -48,7 +52,7 @@ class SimSequence:
         propagation_axis:...
     """
     def __init__(self, files: SimFiles, pulse_length_cells: int, propagation_axis: str, iteration: Tuple[int, int, int],
-                 slices: Sequence[Tuple[int,int]], global_start: int,
+                 slices: Sequence[Tuple[int, int]], global_start: int,
                  global_end: int) -> None:
         """ Initializes a SimSequence object.
 
@@ -193,8 +197,8 @@ class SimSequence:
         # check if axis swap is needed:
         # swap axis and swap sim_box_shape
         labels = ['x', 'y']
-        ax_2 = labels.pop(labels.index(self.propagation_axis))
-        ax_2 = ax_2[0]
+        labels.pop(labels.index(self.propagation_axis))
+        ax_2 =labels[0]
         desired_order = {self.propagation_axis: 1, ax_2: 0}
         desired_order = AxisOrder(**desired_order)
         order_in_index = AxisOrder(**self.axis_order)
@@ -235,45 +239,72 @@ class SimSequence:
 
         return output
 
-    def rotation_3d_perp(self, pulse, wavelength: float, second_axis_output: str) -> np.ndarray:
+    def rotation_3d_perp(self, pulse, wavelength: float, second_axis_output: str,
+                         global_cut_output_first: Tuple[int, int],
+                         global_cut_output_second: Tuple[int, int]) -> np.ndarray:
 
         if second_axis_output not in self._acceptable_names:
             raise ValueError("`second_axis_output` hast to be 'x' or 'y' or 'z'.")
         b_field_component: str = 'B' + self.propagation_axis
         # x_ray_axis has to be the last one, second_axis_output has to be the second
 
+        # Find which axis is the first axis of the output:
         last_axis = self._acceptable_names.copy()
         for axis in [second_axis_output, self.propagation_axis]:
             idx = last_axis.index(axis)
             last_axis.pop(idx)
         assert len(last_axis) == 1
         last_axis = last_axis[0]
+        # Set the desired axis order
         desired_order = {self.propagation_axis: 2, second_axis_output: 1, last_axis: 0}
         desired_order = AxisOrder(**desired_order)
         order_in_index = AxisOrder(**self.axis_order)
+
+        # Get output shape. Set axis transformation if needed.
+        output_first_idx = self.axis_order[last_axis]
+        output_second_idx = self.axis_order[second_axis_output]
         if self.axis_order != desired_order:
             transform = partial(_switch_axis, current_order=order_in_index, desired_order=desired_order)
-            ax: int = self.axis_order[last_axis]
-            output_dim_0 = self.sim_box_shape[ax]
-            ax: int = self.axis_order[second_axis_output]
-            output_dim_1 = self.sim_box_shape[ax]
+            output_dim_0 = self.sim_box_shape[output_first_idx]
+            output_dim_1 = self.sim_box_shape[output_second_idx]
         else:
             transform = None
             output_dim_0 = self.sim_box_shape[0]
             output_dim_1 = self.sim_box_shape[1]
 
+        # Create output:
         output = np.zeros((output_dim_0, output_dim_1), dtype=np.float64)
+
+        # Specify slicing for the data being loaded.
+        dim_cut = [None, None, None]
+        # Let's set slicing in the propagation direction.
+        # Firstly one have to find the propagation axis in the data before the transform (axis swap).
+        prop_ax_idx = self.axis_order[self.propagation_axis]
+        # slicing is set separately for each dimension in a tuple (a,b)
+        # and it corresponds to  [a:b] in numpy or the [a,b[ interval.
+        # Here a & b are global_start and global_end, as we don't need the data from outside this scope.
+        dim_cut[prop_ax_idx] = (self.global_start, self.global_end)
+        dim_cut[output_first_idx] = global_cut_output_first
+        dim_cut[output_second_idx] = global_cut_output_second
+
+        # Begin calculation:
         for step in range(self.number_of_steps):
             # TODO add chunks.
             # cast_to ? needed if we introduce cython., same for make_contiguous
-            data_b = self.get_data(b_field_component, step, transform=transform, make_contiguous=False)
-            data_n = self.get_data('n_e', step, transform=transform, make_contiguous=False)
+            data_b = self.get_data(b_field_component, step, transform=transform, make_contiguous=False, *dim_cut)
+            data_n = self.get_data('n_e', step, transform=transform, make_contiguous=False, *dim_cut)
             data = data_b * data_n
             step_interval = self.slices[step]
-            kernel3d(pulse, data, output, self.global_start, self.global_end, step_interval[0], step_interval[1])
+            local_start = 0
+            local_end = self.global_end - self.global_start
+            step_start = step_interval[0] - self.global_start
+            step_stop = step_interval[1] - self.global_start
+
+            kernel3d(pulse, data, output, local_start, local_end, step_start, step_stop)
         output *= self.integration_factor(wavelength)
         return output
 
+#def _parallel_3d_no_python(open_b: Callable, open_n: Callable, ):
 
 def _get_params_and_check(files: GenericList, propagation_axis: str, start: int, end: int):
 
