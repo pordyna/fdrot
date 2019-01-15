@@ -75,11 +75,12 @@ class OpenPMDList(GenericList):
         if dim3_cut is None and self.data_dim == 3:
             dim3_cut = (0, self.sim_box_shape[2])
 
-        data = self._get_mesh_record(iteration, field)
+        data_mesh = self._get_mesh_record(iteration, field)
         if self.data_dim == 3:
             offset = [dim1_cut[0], dim2_cut[0], dim3_cut[0]]
         else:
             offset = [dim1_cut[0], dim2_cut[0]]
-        data = data.load_chunk(offset, (dim1_cut[1], dim2_cut[1], dim3_cut[1]))
+        data = data_mesh.load_chunk(offset, (dim1_cut[1], dim2_cut[1], dim3_cut[1]))
         self.series.flush()
+        data *= data_mesh.unit_SI
         return data
