@@ -175,7 +175,8 @@ class SimSequence:
         delta_x = self.cell_length_in_prop_direction
         return elementary_charge / (2 * speed_of_light * electron_mass) / critical_density * delta_x
 
-    def rotation_2d_perp(self, pulse: np.ndarray, wavelength: float, interpolation: bool = True) -> np.ndarray:
+    def rotation_2d_perp(self, pulse: np.ndarray, wavelength: float, interpolation: bool = True,
+                         cut_second_axis: Optional[Tuple[int, int]] = None) -> np.ndarray:
         """Propagates the pulse and calculates the integrated faraday rotation.
 
         The effect is integrated over the pulse.
@@ -212,6 +213,13 @@ class SimSequence:
             sim_box_shape_1 = files_bz.sim_box_shape[1]
             transform = None
 
+        # cutting along the second axis (not the radius)
+        dim_cut = [None, None]
+        if cut_second_axis is not None:
+            dim_cut[self.axis_order[ax_2]] = cut_second_axis
+            # the output array has to be smaller:
+            cells_cut = dim_cut[0] + (sim_box_shape_1 - dim_cut[1])
+            sim_box_shape_1 -= cells_cut
         # create output:
         output = np.zeros((sim_box_shape_0 * sim_box_shape_1), dtype=np.float64)
         output = output.reshape((sim_box_shape_1, sim_box_shape_0))
@@ -219,8 +227,8 @@ class SimSequence:
 
         # start the Kernel:
 
-        step_data = (self.get_data('Bz', 0, cast_to=np.dtype('float64'), transform=transform)
-                     * self.get_data('n_e', 0, cast_to=np.dtype('float64'), transform=transform))
+        step_data = (self.get_data('Bz', 0, cast_to=np.dtype('float64'), transform=transform, *dim_cut)
+                     * self.get_data('n_e', 0, cast_to=np.dtype('float64'), transform=transform, *dim_cut))
 
         kernel = Kernel2D(step_data, output, pulse, factor, self.global_start, self.global_end,
                           interpolation=interpolation, inc_sym=False, add=True)
@@ -230,8 +238,8 @@ class SimSequence:
 
         # do the other steps:
         for step in range(1, self.number_of_steps):
-            step_data = (self.get_data('Bz', step, cast_to=np.dtype('float64'), transform=transform)
-                         * self.get_data('n_e', step, cast_to=np.dtype('float64'), transform=transform))
+            step_data = (self.get_data('Bz', step, cast_to=np.dtype('float64'), transform=transform, *dim_cut)
+                         * self.get_data('n_e', step, cast_to=np.dtype('float64'), transform=transform, *dim_cut))
 
             step_interval = self.slices[step]
             kernel.input = step_data
