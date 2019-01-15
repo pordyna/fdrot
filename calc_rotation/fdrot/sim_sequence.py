@@ -218,7 +218,7 @@ class SimSequence:
         if cut_second_axis is not None:
             dim_cut[self.axis_order[ax_2]] = cut_second_axis
             # the output array has to be smaller:
-            cells_cut = dim_cut[0] + (sim_box_shape_1 - dim_cut[1])
+            cells_cut = cut_second_axis[0] + (sim_box_shape_1 - cut_second_axis[1])
             sim_box_shape_1 -= cells_cut
         # create output:
         output = np.zeros((sim_box_shape_0 * sim_box_shape_1), dtype=np.float64)
