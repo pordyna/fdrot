@@ -39,21 +39,21 @@ class OpenPMDList(GenericList):
         # Obtaining the parameters from the series. It's assumed that, they stay the same, for the whole series.
         if axis_map is None:
             key = self.fields_mapping[data_stored[0]][0]
-            axis_map = series.iterations[ids[0]][key].axis_labels
+            axis_map = series.iterations[ids[0]].meshes[key].axis_labels
         if single_time_step is None:
-            single_time_step = series.iterations[ids[0]].dt() * series.iterations[ids[0]].time_unit_SI
+            single_time_step = series.iterations[ids[0]].dt() * series.iterations[ids[0]].time_unit_SI()
         if sim_box_shape is None:
             sim_box_shape = tuple(self._get_mesh_record(ids[0], data_stored[0]).shape)
         if grid is None:
             key = self.fields_mapping[data_stored[0]][0]
-            unit = series.iterations[ids[0]][key].grid_unit_SI
-            spacing = series.iterations[ids[0]][key].grid_spacing
+            unit = series.iterations[ids[0]].meshes[key].grid_unit_SI
+            spacing = series.iterations[ids[0]].meshes[key].grid_spacing
             grid = tuple(unit * np.asarray(spacing))
         super().__init__(single_time_step, ids, grid, sim_box_shape, data_stored, axis_order=axis_map)
 
     def _get_mesh_record(self, iteration: int, field: str) -> openpmd_api.Mesh:
         """Returns the mesh from the series, for a specific iteration and field."""
-        mesh = self.series.iterations[iteration]
+        mesh = self.series.iterations[iteration].meshes
         for key in self.fields_mapping[field]:
             mesh = mesh[key]
         return mesh
