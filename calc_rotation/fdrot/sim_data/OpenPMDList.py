@@ -31,7 +31,7 @@ class OpenPMDList(GenericList):
         # as a tuple of group names.
         if fields_mapping is None:
             self.fields_mapping = {'Bx': ('B', 'x'), 'By': ('B', 'y'),
-                                   'Bz': ('B', 'z'), 'n_e': ('e_density', r'\x0bScalar')}
+                                   'Bz': ('B', 'z'), 'n_e': ('e_density', '\x0bScalar')}
         else: self.fields_mapping = fields_mapping
         self.series = series
         ids = list(series.iterations) # this is a bit tricky
