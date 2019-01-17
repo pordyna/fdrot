@@ -27,10 +27,8 @@ class AxisOrder(NamedTuple):
 
 def _switch_axis(array: np.ndarray, current_order: AxisOrder, desired_order: AxisOrder) -> np.ndarray:
     if current_order.z is None and desired_order.z is None:
-        print("hi hi")
         current_order = (current_order[0], current_order[1])
         desired_order = (desired_order[0], desired_order[1])
-    print("hi")
     return np.moveaxis(array, current_order, desired_order)
 
 # naming: maybe different class name? It's not a Sequence like typing.Sequence.
@@ -158,14 +156,12 @@ class SimSequence:
                     raise TypeError("Data for the iteration {} can't be safely cast to the desired type.".format(ii))
             if transform is not None:
                 data[ii] = transform(data[ii])
-                print("hihihi", make_contiguous)
         if make_contiguous:
             for ii in range(len(data)):
                 print('ii', ii)
                 if not data[ii].flags['C_CONTIGUOUS']:
                     warn('At least one array was not C_Contiguous.')
                     data[ii] = np.ascontiguousarray(data[ii])
-        print("hahaha")
         if len(data) == 1:
             return data[0]
         return data
@@ -226,29 +222,20 @@ class SimSequence:
         factor = self.integration_factor(wavelength)
 
         # start the Kernel:
-        print("start loading")
         Bz = self.get_data('Bz', 0, cast_to=np.dtype('float64'), transform=transform, dim_cut=dim_cut)
-        print('loaded Bz')
         ne = self.get_data('n_e', 0, cast_to=np.dtype('float64'), transform=transform, dim_cut=dim_cut)
-        print('loaded ne')
         step_data = Bz*ne
-        print('data for 0 step loaded.')
         kernel = Kernel2D(step_data, output, pulse, factor, self.global_start, self.global_end,
                           interpolation=interpolation, inc_sym=False, add=True)
-        print('started kernel')
         # rotate with the first slice:
         kernel.propagate_step(self.slices[0][0], self.slices[0][1])
-        print('step 0  done')
         # do the other steps:
         for step in range(1, self.number_of_steps):
             step_data = (self.get_data('Bz', step, cast_to=np.dtype('float64'), transform=transform, dim_cut=dim_cut)
                          * self.get_data('n_e', step, cast_to=np.dtype('float64'), transform=transform, dim_cut=dim_cut))
-            print('data for {} step loaded'.format(step))
             step_interval = self.slices[step]
             kernel.input = step_data
             kernel.propagate_step(step_interval[0], step_interval[1])
-            print('step {} done'.format(step))
-
         return output
 
     def rotation_3d_perp(self, pulse, wavelength: float, second_axis_output: str,
