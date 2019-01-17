@@ -78,9 +78,14 @@ class OpenPMDList(GenericList):
         data_mesh = self._get_mesh_record(iteration, field)
         if self.data_dim == 3:
             offset = [dim1_cut[0], dim2_cut[0], dim3_cut[0]]
+            extent = (dim1_cut[1] - dim1_cut[0],
+                      dim2_cut[1] - dim2_cut[0],
+                      dim3_cut[1] - dim3_cut[0])
         else:
             offset = [dim1_cut[0], dim2_cut[0]]
-        data = data_mesh.load_chunk(offset, (dim1_cut[1], dim2_cut[1], dim3_cut[1]))
+            extent = (dim1_cut[1] - dim1_cut[0],
+                      dim2_cut[1] - dim2_cut[0])
+        data = data_mesh.load_chunk(offset, extent)
         self.series.flush()
         data *= data_mesh.unit_SI
         return data
