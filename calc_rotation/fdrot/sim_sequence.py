@@ -239,8 +239,8 @@ class SimSequence:
         return output
 
     def rotation_3d_perp(self, pulse, wavelength: float, second_axis_output: str,
-                         global_cut_output_first: Tuple[int, int],
-                         global_cut_output_second: Tuple[int, int]) -> np.ndarray:
+                         global_cut_output_first: Optional[Tuple[int, int]] = None,
+                         global_cut_output_second: Optional[Tuple[int, int]] = None) -> np.ndarray:
 
         if second_axis_output not in self._acceptable_names:
             raise ValueError("`second_axis_output` hast to be 'x' or 'y' or 'z'.")
@@ -271,8 +271,6 @@ class SimSequence:
             output_dim_0 = self.sim_box_shape[0]
             output_dim_1 = self.sim_box_shape[1]
 
-        # Create output:
-        output = np.zeros((output_dim_0, output_dim_1), dtype=np.float64)
 
         # Specify slicing for the data being loaded.
         dim_cut = [None, None, None]
@@ -283,8 +281,17 @@ class SimSequence:
         # and it corresponds to  [a:b] in numpy or the [a,b[ interval.
         # Here a & b are global_start and global_end, as we don't need the data from outside this scope.
         dim_cut[prop_ax_idx] = (self.global_start, self.global_end)
-        dim_cut[output_first_idx] = global_cut_output_first
+
         dim_cut[output_second_idx] = global_cut_output_second
+        if global_cut_output_first is not None:
+            dim_cut[output_first_idx] = global_cut_output_first
+            output_dim_0 = dim_cut[output_first_idx][1] - dim_cut[output_first_idx][0]
+        if global_cut_output_second is not None:
+            dim_cut[output_second_idx] = global_cut_output_second
+            output_dim_1 = dim_cut[output_second_idx][1] - dim_cut[output_second_idx][0]
+
+        # Create output:
+        output = np.zeros((output_dim_0, output_dim_1), dtype=np.float64)
 
         # Begin calculation:
         for step in range(self.number_of_steps):
