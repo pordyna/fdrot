@@ -3,7 +3,7 @@ This file is a part of the Fdrot package.
 """
 import numpy as np
 from typing import Tuple, Sequence,  Optional
-import openPMD
+import openpmd_api
 
 from . import GenericList
 
@@ -19,7 +19,7 @@ class OpenPMDList(GenericList):
             data_stored: Fields accessible through this index. Stored as string keys (exp. ['Bz', n_e']).
             series: An openPMD API Series object.
     """
-    def __init__(self, series: openPMD.Series, data_stored: Sequence,
+    def __init__(self, series: openpmd_api.Series, data_stored: Sequence,
                  single_time_step: Optional[float],
                  sim_box_shape: Optional[Tuple[int, int]],
                  grid: Optional[Sequence[float]] = None, axis_map: Optional[Sequence[str]] = None,
@@ -51,7 +51,7 @@ class OpenPMDList(GenericList):
             grid = tuple(unit * np.asarray(spacing))
         super().__init__(single_time_step, ids, grid, sim_box_shape, data_stored, axis_order=axis_map)
 
-    def _get_mesh_record(self, iteration: int, field: str) -> openPMD.Mesh:
+    def _get_mesh_record(self, iteration: int, field: str) -> openpmd_api.Mesh:
         """Returns the mesh from the series, for a specific iteration and field."""
         mesh = self.series.iterations[iteration]
         for key in self.fields_mapping[field]:
