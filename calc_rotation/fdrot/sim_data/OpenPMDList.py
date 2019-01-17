@@ -34,7 +34,7 @@ class OpenPMDList(GenericList):
                                    'Bz': ('B', 'z'), 'n_e': ('e_density', r'\x0bScalar')}
         else: self.fields_mapping = fields_mapping
         self.series = series
-        ids = series.iterations.items
+        ids = list(series.iterations) # this is a bit tricky
 
         # Obtaining the parameters from the series. It's assumed that, they stay the same, for the whole series.
         if axis_map is None:
