@@ -20,8 +20,8 @@ class OpenPMDList(GenericList):
             series: An openPMD API Series object.
     """
     def __init__(self, series: openpmd_api.Series, data_stored: Sequence,
-                 single_time_step: Optional[float],
-                 sim_box_shape: Optional[Tuple[int, int]],
+                 single_time_step: Optional[float] = None,
+                 sim_box_shape: Optional[Tuple[int, int]] = None,
                  grid: Optional[Sequence[float]] = None, axis_map: Optional[Sequence[str]] = None,
                  fields_mapping: Optional[dict] = None):
         """Initializes an OpenPMDList object.
