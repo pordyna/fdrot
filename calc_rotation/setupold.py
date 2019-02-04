@@ -1,9 +1,0 @@
-from distutils.core import setup
-from distutils.extension import Extension
-from Cython.Build import cythonize
-
-extensions = [Extension('fdrot.c_rotation', ['fdrot/c_rotation.pyx'])]
-setup(name='Fdrot',
-    ext_modules=cythonize(extensions, annotate=True, gdb_debug=False),
-    packages = ['fdrot'], version='0.0.1'
-)
