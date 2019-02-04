@@ -23,6 +23,7 @@ def kernel3d(pulse: np.ndarray,
     :param leading_start: Interval start for the leading slice of the pulse (in a single time step).
     :param leading_stop:  Interval stop for the leading slice of the pulse (in a single time step).
     """
+    # TODO assertions
     pulse_len = pulse.shape[0]
     if leading_start < global_start:
         leading_start = global_start
