@@ -116,6 +116,9 @@ class SimSequence:
                 for field, file in self.files.items():
                     if idd not in file.ids:
                         missing.append((step, idd, field))
+            else:
+                if idd not in self.files.ids:
+                    missing.append((step, idd))
         ok = not bool(missing)
         if not ok:
             print("Those iterations are missing, (step, iteration, field):")
