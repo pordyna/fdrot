@@ -241,7 +241,7 @@ class SimSequence:
             kernel.propagate_step(step_interval[0], step_interval[1])
         return output
 
-    def rotation_3d_perp(self, pulse, wavelength: float, second_axis_output: str,
+    def rotation_3d_perp(self, pulse, wavelength: float, second_axis_output: str, n=1,
                          global_cut_output_first: Optional[Tuple[int, int]] = None,
                          global_cut_output_second: Optional[Tuple[int, int]] = None) -> np.ndarray:
 
@@ -295,9 +295,12 @@ class SimSequence:
 
         # Create output:
         output = np.zeros((output_dim_0, output_dim_1), dtype=np.float64)
-
+        
+        verbose = np.arange(n, self.number_of_steps +1, n)
         # Begin calculation:
         for step in range(self.number_of_steps):
+            if step in verbose:
+                print(('step {} out of {} started').format(step, self.number_of_steps))
             # TODO add chunks.
             # cast_to ? needed if we introduce cython., same for make_contiguous
             data_b = self.get_data(b_field_component, step, transform=transform, make_contiguous=False, dim_cut=dim_cut)
