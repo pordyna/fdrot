@@ -161,7 +161,6 @@ class SimSequence:
                 data[ii] = transform(data[ii])
         if make_contiguous:
             for ii in range(len(data)):
-                print('ii', ii)
                 if not data[ii].flags['C_CONTIGUOUS']:
                     warn('At least one array was not C_Contiguous.')
                     data[ii] = np.ascontiguousarray(data[ii])
@@ -258,7 +257,7 @@ class SimSequence:
         assert len(last_axis) == 1
         last_axis = last_axis[0]
         # Set the desired axis order
-        desired_order = {self.propagation_axis: 2, second_axis_output: 1, last_axis: 0}
+        desired_order = {self.propagation_axis: 1, second_axis_output: 2, last_axis: 0}
         desired_order = AxisOrder(**desired_order)
         order_in_index = AxisOrder(**self.axis_order)
 
@@ -296,15 +295,15 @@ class SimSequence:
         # Create output:
         output = np.zeros((output_dim_0, output_dim_1), dtype=np.float64)
         
-        verbose = np.arange(n, self.number_of_steps +1, n)
+        verbose = np.arange(0, self.number_of_steps +1, n)
         # Begin calculation:
         for step in range(self.number_of_steps):
             if step in verbose:
-                print(('step {} out of {} started').format(step, self.number_of_steps))
+                print(('step {} out of {} started').format(step + 1, self.number_of_steps))
             # TODO add chunks.
             # cast_to ? needed if we introduce cython., same for make_contiguous
-            data_b = self.get_data(b_field_component, step, transform=transform, make_contiguous=False, dim_cut=dim_cut)
-            data_n = self.get_data('n_e', step, transform=transform, make_contiguous=False, dim_cut=dim_cut)
+            data_b = self.get_data(b_field_component, step, transform=transform, make_contiguous=True, dim_cut=dim_cut)
+            data_n = self.get_data('n_e', step, transform=transform, make_contiguous=True, dim_cut=dim_cut)
             data = data_b * data_n
             step_interval = self.slices[step]
             local_start = 0

@@ -3,7 +3,7 @@ from numba import njit, prange
 import importlib # since Python 3.4
 
 
-@njit(parallel=True, cache=True)
+#@njit(parallel=True, cache=True)
 def kernel3d(pulse: np.ndarray,
              input_arr: np.ndarray,
              output: np.ndarray,
@@ -33,7 +33,7 @@ def kernel3d(pulse: np.ndarray,
     pulse_head = leading_start  # cell where the most right slice of the pulse is. +/- 1
     pulse_tail = pulse_head - (pulse_len - 1)  # cell where the most left slice of the pulse is. +/- 1
     for zz in prange(input_arr.shape[0]):
-        summed = np.zeros(input_arr.shape[1])  # y
+        summed = np.zeros(input_arr.shape[2])  # y
         input_slice = input_arr[zz, :, :]  # 2D (y,x)
         for tt in prange(duration):
             # Assigned variables in prange loops are private; pulse_head, pulse_tail can only be read here, so
@@ -53,9 +53,9 @@ def kernel3d(pulse: np.ndarray,
                 cut_pulse = pulse[cut_at_tail:]
             else:
                 cut_pulse = pulse[cut_at_tail:-cut_at_head]
-            slice_chunk = input_slice[:, pulse_tail_private:pulse_head_private + 1]  # Take all 'y' cut in 'x'.
+            slice_chunk = input_slice[pulse_tail_private:pulse_head_private + 1, :]  # Take all 'y' cut in 'x'.
             # Faraday Rotation originating from the time interval [tt, tt+1].
-            summed += np.dot(slice_chunk, cut_pulse)  # Shapes: (y,x) * (x,) -> (y,) # prange reduction
+            summed += np.dot(cut_pulse, slice_chunk)  # Shapes: (x,) * (x,y)  -> (y,) # prange reduction
             # propagate by one cell:
 
         output[zz, :] += summed  # (y,) + (y,) # -zz -> zz # prange reduction
