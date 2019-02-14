@@ -3,7 +3,7 @@ from numba import njit, prange
 import importlib # since Python 3.4
 
 
-#@njit(parallel=True, cache=True)
+@njit(parallel=True, cache=True)
 def kernel3d(pulse: np.ndarray,
              input_arr: np.ndarray,
              output: np.ndarray,
