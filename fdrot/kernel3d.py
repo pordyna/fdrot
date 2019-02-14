@@ -27,9 +27,9 @@ def kernel3d(pulse: np.ndarray,
     pulse_len = pulse.shape[0]
     if leading_start < global_start:
         leading_start = global_start
-    if leading_stop > global_stop:
-        leading_stop = global_stop
-    duration = leading_stop - leading_start + (pulse_len - 1)  # in cells, +/- 1
+    if leading_stop > global_stop + (pulse_len - 1):
+        leading_stop = global_stop + (pulse_len - 1)
+    duration = leading_stop - leading_start  # in cells, +/- 1
     pulse_head = leading_start  # cell where the most right slice of the pulse is. +/- 1
     pulse_tail = pulse_head - (pulse_len - 1)  # cell where the most left slice of the pulse is. +/- 1
     for zz in prange(input_arr.shape[0]):
@@ -47,7 +47,6 @@ def kernel3d(pulse: np.ndarray,
                 cut_at_tail, pulse_tail_private = global_start - pulse_tail_private, global_start
             if pulse_head_private > global_stop - 1:
                 cut_at_head, pulse_head_private = pulse_head_private - (global_stop - 1), global_stop - 1
-
             # Broadcasting arrays:
             if cut_at_head == 0:
                 cut_pulse = pulse[cut_at_tail:]
