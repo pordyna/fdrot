@@ -1,7 +1,9 @@
-# cython: language_level=3
-"""c_defs.pxd
-This file is a part of the Fdrot package.
 """
+This file is a part of the fdrot package.
+
+Authors: Paweł Ordyna
+"""
+
 ctypedef struct Interval:
     Py_ssize_t start
     Py_ssize_t stop
@@ -14,4 +16,3 @@ ctypedef enum UpDown:
 ctypedef enum Side:
     left
     right
-
