@@ -46,7 +46,7 @@ class GenericList:
 
         self.single_time_step = single_time_step
         self.ids = ids
-        self.grid = grid
+        self.grid = tuple(grid)
         self.sim_box_shape = sim_box_shape
         self.data_stored = data_stored
         self.axis_map = {}

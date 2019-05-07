@@ -5,12 +5,15 @@ Authors: Paweł Ordyna
 """
 
 import numpy as np
+import numba
 from numba import njit, prange
 
 # TODO hard copy signature
 
 
-@njit(parallel=True, cache=True)
+@njit((numba.float64[::1], numba.float64[:, :, :1], numba.float64[:, ::1],
+       numba.uint32, numba.uint32, numba.int32, numba.int32),
+      parallel=True, cache=True)
 def kernel3d(pulse: np.ndarray,
              input_arr: np.ndarray,
              output: np.ndarray,

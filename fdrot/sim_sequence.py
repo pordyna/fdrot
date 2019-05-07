@@ -5,7 +5,7 @@ steps and propagating over them.
 
 from typing import (Union, Tuple, Sequence, Mapping, NamedTuple,
                     Optional, Callable)
-from warnings import warn
+# from warnings import warn
 from functools import partial
 import math
 
@@ -105,7 +105,7 @@ class SimSequence:
             grids = []
             for file_index in self.files.values():
                 shapes.append(file_index.sim_box_shape)
-                axis_orders.append(AxisOrder(**file_index.axis_order))
+                axis_orders.append(AxisOrder(**file_index.axis_map))
                 grids.append(file_index.grid)
             assert len(set(shapes)) == 1, "All file lists should have the " \
                                           "same `sim_box_shape` attr. ."
@@ -198,7 +198,7 @@ class SimSequence:
             data = transform(data)
         if make_contiguous:
             if not data.flags['C_CONTIGUOUS']:
-                warn('The array was not C-contiguous.')
+                # warn('The array was not C-contiguous.')
                 data = np.ascontiguousarray(data)
         return data
 
@@ -318,7 +318,7 @@ class SimSequence:
         return output
 
     def rotation_3d_perp(self, pulse, wavelength: float,
-                         second_axis_output: str, n=1,
+                         second_axis_output: str,
                          global_cut_output_first: Optional[
                              Tuple[int, int]] = None,
                          global_cut_output_second: Optional[
@@ -399,13 +399,9 @@ class SimSequence:
 
         # Create output:
         output = np.zeros((output_dim_0, output_dim_1), dtype=np.float64)
-        
-        verbose = np.arange(0, self.number_of_steps +1, n)
+
         # Begin calculation:
         for step in range(self.number_of_steps):
-            if step in verbose:
-                print(('step {} out of {} started'
-                       ).format(step + 1, self.number_of_steps))
             # TODO add chunks.
             data_b = self.get_data(b_field_component, step,
                                    transform=transform, make_contiguous=True,

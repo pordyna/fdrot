@@ -15,7 +15,7 @@ from cython.view cimport array as cvarray
 from .c_defs cimport *
 
 """
-This file is a part of an Cython extension in the fdrot package.
+This file is a part of a Cython extension in the fdrot package.
 
 Authors: Paweł Ordyna
 """
@@ -392,10 +392,6 @@ cdef class Kernel2D:
               the innermost one. 
             incl_down: If False the values are calculated and written 
               out only for the upper part of the distribution.
-              
-          Raises:
-               ValueError: If interval.start <= interval.stop (after 
-               eventual cutting at the cylinder wall).
           """
         cdef Py_ssize_t x_start
         # Determine the start value for the X-loop.
@@ -407,9 +403,7 @@ cdef class Kernel2D:
             self.edge = False
         # Run the loop.
         if x_start <= interval.stop:
-            raise ValueError('interval.start hast to be grater than '
-                             'interval.stop since the x-loop moves from the '
-                             'outside of the cylinder to the inside of it.')
+            return 1
         self.x_loop(zz, yy, x_start, interval.stop, output, incl_down)
         return 0
 
