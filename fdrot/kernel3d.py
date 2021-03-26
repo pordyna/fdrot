@@ -11,7 +11,7 @@ from numba import njit, prange
 # TODO hard copy signature
 
 
-@njit((numba.float64[::1], numba.float64[:, :, :1], numba.float64[:, ::1],
+@njit((numba.float64[::1], numba.float64[:, :, ::1], numba.float64[:, ::1],
        numba.uint32, numba.uint32, numba.int32, numba.int32),
       parallel=True, cache=True)
 def kernel3d(pulse: np.ndarray,
