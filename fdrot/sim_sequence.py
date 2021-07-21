@@ -43,6 +43,11 @@ def _switch_axis(array: np.ndarray, current_order: AxisOrder,
     return np.moveaxis(array, current_order, desired_order)
 
 
+def _default_energy_to_alpha(energy: np.ndarray) -> np.ndarray:
+    # alpha is 1/gamma^2
+    return 1 / (energy / electron_mass / speed_of_light**2 + 1)**2
+
+
 class SimSequence:
 
     """Provides tools for FR calculation over a time steps sequence.
@@ -95,7 +100,7 @@ class SimSequence:
         if propagation_axis not in self._acceptable_names:
             raise ValueError("`x_ray_axis` hast to be 'x' or 'y' or 'z'.")
         self.propagation_axis: str = propagation_axis
-        
+
         if not self.check_iterations():
             raise ValueError("Iterations missing in the file index.")
 
@@ -211,7 +216,7 @@ class SimSequence:
 
         critical_density = (electron_mass * epsilon_0
                             * ((2 * math.pi * speed_of_light)
-                               / (elementary_charge * wavelength))**2)
+                               / (elementary_charge * wavelength)) ** 2)
         delta_x = self.cell_length_in_prop_direction
         return (elementary_charge / (2 * speed_of_light * electron_mass)
                 / critical_density * delta_x)
@@ -266,7 +271,7 @@ class SimSequence:
         # swap axis and swap sim_box_shape
         labels = ['x', 'y']
         labels.pop(labels.index(self.propagation_axis))
-        ax_2 =labels[0]
+        ax_2 = labels[0]
         desired_order = {self.propagation_axis: 1, ax_2: 0}
         desired_order = AxisOrder(**desired_order)
         order_in_index = AxisOrder(**self.axis_map)
@@ -274,7 +279,7 @@ class SimSequence:
         if desired_order != order_in_index:
             sim_box_shape_0 = files_bz.sim_box_shape[1]
             sim_box_shape_1 = files_bz.sim_box_shape[0]
-            transform = partial(_switch_axis,  current_order=order_in_index,
+            transform = partial(_switch_axis, current_order=order_in_index,
                                 desired_order=desired_order)
         else:
             sim_box_shape_0 = files_bz.sim_box_shape[0]
@@ -298,7 +303,7 @@ class SimSequence:
                            transform=transform, dim_cut=dim_cut)
         ne = self.get_data('n_e', 0, cast_to=np.dtype('float64'),
                            transform=transform, dim_cut=dim_cut)
-        step_data = Bz*ne
+        step_data = Bz * ne
         kernel = Kernel2D(step_data, output, pulse, factor, self.global_start,
                           self.global_end, interpolation=interpolation,
                           add=True, inc_sym_only_vertical_middle=
@@ -322,7 +327,9 @@ class SimSequence:
                          global_cut_output_first: Optional[
                              Tuple[int, int]] = None,
                          global_cut_output_second: Optional[
-                             Tuple[int, int]] = None) -> np.ndarray:
+                             Tuple[int, int]] = None,
+                         include_relativistic_correction: Optional[bool] = False,
+                         mean_energy_to_alpha: Optional[Callable[[np.ndarray], np.ndarray]] = None) -> np.ndarray:
         """Propagates the pulse and calculates faraday rotation (in 3D).
 
         The effect is integrated over the pulse.
@@ -339,6 +346,10 @@ class SimSequence:
               axis or the one set in second_axis_output.
             global_cut_output_second: This defines the chunk of data to
               use along the axis set in second_axis_output.
+            include_relativistic_correction: When True a relativistic
+                correction is applied based on energy density.
+            mean_energy_to_alpha: will be used instead of default to calculate
+              the relativistic correction from mean energy
 
         Returns: rotation profile
         """
@@ -409,6 +420,16 @@ class SimSequence:
             data_n = self.get_data('n_e', step, transform=transform,
                                    make_contiguous=True, dim_cut=dim_cut)
             data = data_b * data_n
+            if include_relativistic_correction:
+                data_energy_density = self.get_data('energy_density', step, transform=transform,
+                                                    make_contiguous=True, dim_cut=dim_cut)
+                cell_size = self.get_files('energy_density').grid
+                cell_volume = cell_size[0] * cell_size[1] * cell_size[2]
+                mean_energy = data_energy_density * cell_volume
+                if mean_energy_to_alpha is None:
+                    mean_energy_to_alpha = _default_energy_to_alpha
+                data *= mean_energy_to_alpha(mean_energy)
+
             step_interval = self.slices[step]
             local_start = 0
             local_end = self.global_end - self.global_start
@@ -433,7 +454,7 @@ def _get_params_and_check(files: GenericList, propagation_axis: str,
 
 def seq_cells(start: int, end: int, inc_time: float, iter_step: int,
               pulse_length_cells: int, files: SimFiles,
-              propagation_axis: str)-> SimSequence:
+              propagation_axis: str) -> SimSequence:
     """Creates a SimSequence for the given parameters.
 
     Args:
