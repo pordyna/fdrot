@@ -82,6 +82,7 @@ def kernel3d(pulse: np.ndarray,
                                       , :]  # Take all 'y' cut in 'x'.
             # Faraday Rotation originating from the time interval [tt, tt+1].
             # summed += ... : Shapes: (x,) * (x,y)  -> (y,) # prange reduction
+            slice_chunk = np.numpy.ascontiguousarray(slice_chunk)
             summed += np.dot(cut_pulse, slice_chunk)
             # propagate by one cell:
 
