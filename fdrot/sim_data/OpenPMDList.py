@@ -59,8 +59,8 @@ class OpenPMDList(GenericList):
             key = self.fields_mapping[data_stored[0]][0]
             axis_order = series.iterations[ids[0]].meshes[key].axis_labels
         if single_time_step is None:
-            single_time_step = (series.iterations[ids[0]].dt()
-                                * series.iterations[ids[0]].time_unit_SI())
+            single_time_step = (series.iterations[ids[0]].dt
+                                * series.iterations[ids[0]].time_unit_SI)
         if sim_box_shape is None:
             sim_box_shape = tuple(self._get_mesh_record(ids[0],
                                                         data_stored[0]).shape)
