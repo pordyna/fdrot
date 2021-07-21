@@ -416,13 +416,13 @@ class SimSequence:
             # TODO add chunks.
             data_b = self.get_data(b_field_component, step,
                                    transform=transform, make_contiguous=True,
-                                   dim_cut=dim_cut)
+                                   dim_cut=dim_cut, cast_to=np.dtype('float64'))
             data_n = self.get_data('n_e', step, transform=transform,
-                                   make_contiguous=True, dim_cut=dim_cut)
+                                   make_contiguous=True, dim_cut=dim_cut, cast_to=np.dtype('float64'))
             data = data_b * data_n
             if include_relativistic_correction:
                 data_energy_density = self.get_data('energy_density', step, transform=transform,
-                                                    make_contiguous=True, dim_cut=dim_cut)
+                                                    make_contiguous=True, dim_cut=dim_cut, cast_to=np.dtype('float64'))
                 cell_size = self.get_files('energy_density').grid
                 cell_volume = cell_size[0] * cell_size[1] * cell_size[2]
                 mean_energy = data_energy_density * cell_volume
