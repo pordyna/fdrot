@@ -13,7 +13,7 @@ from numba import njit, prange
 
 @njit((numba.float64[::1], numba.float64[:, :, ::1], numba.float64[:, :, ::1],
        numba.uint32, numba.uint32, numba.int32, numba.int32),
-      parallel=True, cache=True)
+      parallel=True)
 def kernel3d(pulse: np.ndarray,
              input_arr: np.ndarray,
              output: np.ndarray,
@@ -79,9 +79,6 @@ def kernel3d(pulse: np.ndarray,
                                   :, :]  # Take all 'y' cut in 'x'.
         # Faraday Rotation originating from the time interval [tt, tt+1].
         # summed += ... : Shapes: (x,) * (x,y)  -> (y,) # prange reduction
+        for ii in prange(cut_pulse.shape[0]):
+            output[cut_at_tail+ii, :, :] = cut_pulse[ii] = field_chunk[ii, :, :]
 
-        cut_pulse = np.expand_dims(np.expand_dims(cut_pulse, -1), -1)
-        if cut_at_head == 0:
-            output[cut_at_tail:, :, :] += cut_pulse * field_chunk
-        else:
-            output[cut_at_tail:-cut_at_head, :, :] += cut_pulse * field_chunk

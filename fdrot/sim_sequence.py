@@ -204,16 +204,10 @@ class SimSequence:
         if transform is not None:
             data = transform(data)
 
-        # not sure if numba can parallelize copying but maybe it can
-        # so why not.
-        @njit(parallel=True)
-        def numba_contiguous_copy(array):
-            return np.ascontiguousarray(array)
-
         if make_contiguous:
             if not data.flags['C_CONTIGUOUS']:
                 # warn('The array was not C-contiguous.')
-                data = numba_contiguous_copy(data)
+                data = np.ascontiguousarray(data)
         return data
 
     def integration_factor(self, wavelength):
@@ -441,7 +435,7 @@ class SimSequence:
                 if mean_energy_to_alpha is None:
                     mean_energy_to_alpha = _default_energy_to_alpha
 
-                @njit(parallel=True, cache=True)
+                @njit(parallel=True)
                 def numba_mean_energy_to_alpha(array):
                     return mean_energy_to_alpha(array)
 
