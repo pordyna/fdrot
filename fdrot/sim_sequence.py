@@ -12,11 +12,13 @@ import math
 import numpy as np
 from scipy.constants import (electron_mass, speed_of_light,
                              elementary_charge, epsilon_0)
+from numba import njit
 
 from .sim_data import GenericList
 from . import spliters
 from .Kernel2D import Kernel2D
 from .kernel3d import kernel3d
+from parallel_helpers import numba_multiply_arrays, average_over_pulse
 
 """
 This module is a part of the fdrot package.
@@ -201,10 +203,17 @@ class SimSequence:
                                 "cast to the desired type.".format(step))
         if transform is not None:
             data = transform(data)
+
+        # not sure if numba can parallelize copying but maybe it can
+        # so why not.
+        @njit(parallel=True)
+        def numba_contiguous_copy(array):
+            return np.ascontiguousarray(array)
+
         if make_contiguous:
             if not data.flags['C_CONTIGUOUS']:
                 # warn('The array was not C-contiguous.')
-                data = np.ascontiguousarray(data)
+                data = numba_contiguous_copy(data)
         return data
 
     def integration_factor(self, wavelength):
@@ -368,8 +377,8 @@ class SimSequence:
         assert len(last_axis) == 1
         last_axis = last_axis[0]
         # Set the desired axis order
-        desired_order = {self.propagation_axis: 1, second_axis_output: 2,
-                         last_axis: 0}
+        desired_order = {self.propagation_axis: 0, second_axis_output: 2,
+                         last_axis: 1}
         desired_order = AxisOrder(**desired_order)
         order_in_index = AxisOrder(**self.axis_map)
 
@@ -409,7 +418,7 @@ class SimSequence:
                             - dim_cut[output_second_idx][0])
 
         # Create output:
-        output = np.zeros((output_dim_0, output_dim_1), dtype=np.float64)
+        output = np.zeros((pulse.size, output_dim_0, output_dim_1), dtype=np.float64)
 
         # Begin calculation:
         for step in range(self.number_of_steps):
@@ -419,7 +428,10 @@ class SimSequence:
                                    dim_cut=dim_cut, cast_to=np.dtype('float64'))
             data_n = self.get_data('n_e', step, transform=transform,
                                    make_contiguous=True, dim_cut=dim_cut, cast_to=np.dtype('float64'))
-            data = data_b * data_n
+
+            data = numba_multiply_arrays(data_b, data_n)
+            del data_b
+            del data_n
             if include_relativistic_correction:
                 data_energy_density = self.get_data('energy_density', step, transform=transform,
                                                     make_contiguous=True, dim_cut=dim_cut, cast_to=np.dtype('float64'))
@@ -428,7 +440,12 @@ class SimSequence:
                 mean_energy = data_energy_density * cell_volume
                 if mean_energy_to_alpha is None:
                     mean_energy_to_alpha = _default_energy_to_alpha
-                data *= mean_energy_to_alpha(mean_energy)
+
+                @njit(parallel=True, cache=True)
+                def numba_mean_energy_to_alpha(array):
+                    return mean_energy_to_alpha(array)
+
+                data = numba_multiply_arrays(numba_mean_energy_to_alpha(mean_energy), data)
 
             step_interval = self.slices[step]
             local_start = 0
@@ -439,7 +456,9 @@ class SimSequence:
             kernel3d(pulse, data, output, local_start, local_end,
                      step_start, step_stop)
         output *= self.integration_factor(wavelength)
-        return output
+        output_flat = np.zeros((output_dim_0, output_dim_1), dtype=np.float64)
+        average_over_pulse(output, output_flat)
+        return output_flat
 
 
 def _get_params_and_check(files: GenericList, propagation_axis: str,
