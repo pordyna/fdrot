@@ -18,7 +18,7 @@ from .sim_data import GenericList
 from . import spliters
 from .Kernel2D import Kernel2D
 from .kernel3d import kernel3d
-from parallel_helpers import numba_multiply_arrays, average_over_pulse
+from .parallel_helpers import numba_multiply_arrays, average_over_pulse
 
 """
 This module is a part of the fdrot package.
