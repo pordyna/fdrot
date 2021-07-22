@@ -80,5 +80,5 @@ def kernel3d(pulse: np.ndarray,
         # Faraday Rotation originating from the time interval [tt, tt+1].
         # summed += ... : Shapes: (x,) * (x,y)  -> (y,) # prange reduction
         for ii in prange(cut_pulse.shape[0]):
-            output[cut_at_tail+ii, :, :] = cut_pulse[ii] = field_chunk[ii, :, :]
+            output[cut_at_tail+ii, :, :] = cut_pulse[ii] * field_chunk[ii, :, :]
 
