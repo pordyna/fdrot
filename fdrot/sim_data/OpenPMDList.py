@@ -81,7 +81,7 @@ class OpenPMDList(GenericList):
             mesh = mesh[key]
         return mesh
 
-    def open_iterations(self, iteration: int):
+    def open_iteration(self, iteration: int):
         self.iteration = self.series.iterations[iteration]
 
     def close_iteration(self):
