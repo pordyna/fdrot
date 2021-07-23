@@ -56,22 +56,30 @@ class OpenPMDList(GenericList):
 
         # Obtaining the parameters from the series. It's assumed that, they
         # stay the same, for the whole series.
+        iteration = series.iterations[ids[0]]
         if axis_order is None:
             key = self.fields_mapping[data_stored[0]][0]
-            axis_order = series.iterations[ids[0]].meshes[key].axis_labels
+            axis_order = iteration.meshes[key].axis_labels
         if single_time_step is None:
-            single_time_step = (series.iterations[ids[0]].dt
-                                * series.iterations[ids[0]].time_unit_SI)
+            single_time_step = (iteration.dt
+                                * iteration.time_unit_SI)
         if sim_box_shape is None:
-            sim_box_shape = tuple(self.series.iterations[ids[0]].meshes[self.fields_mapping[data_stored[0]]].shape)
+            sim_box_shape = tuple(self._get_mesh_record(iteration, data_stored[0]).shape)
         if grid is None:
             key = self.fields_mapping[data_stored[0]][0]
-            unit = series.iterations[ids[0]].meshes[key].grid_unit_SI
-            spacing = series.iterations[ids[0]].meshes[key].grid_spacing
+            unit = iteration.meshes[key].grid_unit_SI
+            spacing = iteration.meshes[key].grid_spacing
             grid = tuple(unit * np.asarray(spacing))
-        series.iterations[ids[0]].close()
+
         super().__init__(single_time_step, ids, grid, sim_box_shape,
                          data_stored, axis_order=axis_order)
+
+    def _get_mesh_record(self, iteration: openpmd_api.Iteration, field: str) -> openpmd_api.Mesh:
+        """Returns a mesh object for a specific iteration and field."""
+        mesh = self.series.iterations[iteration].meshes
+        for key in self.fields_mapping[field]:
+            mesh = mesh[key]
+        return mesh
 
     def open_iterations(self, iteration: int):
         self.iteration = self.series.iterations[iteration]
@@ -118,7 +126,7 @@ class OpenPMDList(GenericList):
         if dim3_cut is None and self.data_dim == 3:
             dim3_cut = (0, self.sim_box_shape[2])
 
-        data_mesh = self.iteration.meshes[self.fields_mapping[field]]
+        data_mesh = self._get_mesh_record(self.iteration, field)
 
         if self.data_dim == 3:
             offset = [dim1_cut[0], dim2_cut[0], dim3_cut[0]]
