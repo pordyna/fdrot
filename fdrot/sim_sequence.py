@@ -143,6 +143,20 @@ class SimSequence:
         else:
             return self.files
 
+    def open_iteration(self, iteration: int):
+        if isinstance(self.files, Mapping):
+            for field in self.files:
+                self.files[field].open_iteration(iteration)
+        else:
+            self.files.open_iteration(iteration)
+
+    def close_iteration(self):
+        if isinstance(self.files, Mapping):
+            for field in self.files:
+                self.files[field].close_iteration()
+        else:
+            self.files.close_iteration()
+
     def check_iterations(self) -> bool:
         """Checks if all needed iterations are listed.
 
@@ -417,6 +431,8 @@ class SimSequence:
         # Begin calculation:
         for step in range(self.number_of_steps):
             print(f"starting to process step {step}")
+            self.open_iteration(self.step_to_iter(step))
+
             # TODO add chunks.
             data_b = self.get_data(b_field_component, step,
                                    transform=transform, make_contiguous=True,
@@ -441,7 +457,7 @@ class SimSequence:
                     return mean_energy_to_alpha(array)
 
                 data = numba_multiply_arrays(numba_mean_energy_to_alpha(mean_energy), data)
-
+            self.close_iteration()
             step_interval = self.slices[step]
             local_start = 0
             local_end = self.global_end - self.global_start

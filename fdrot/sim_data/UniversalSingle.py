@@ -136,7 +136,13 @@ class UniversalSingle(GenericList):
                 print("All files exist.")
         return ok, bad_ids
 
-    def open(self, iteration: int, field: str,
+    def open_iteration(self, iteration: int):
+        self.iteration = iteration
+
+    def close_iteration(self):
+        self.iteration = None
+
+    def open(self,  field: str,
              dim1_cut: Optional[Tuple[int, int]] = None,
              dim2_cut: Optional[Tuple[int, int]] = None,
              dim3_cut: Optional[Tuple[int, int]] = None) -> np.ndarray:
@@ -147,7 +153,6 @@ class UniversalSingle(GenericList):
         simulation box is loaded in the process.
 
         Args:
-            iteration: iteration from which the data should be loaded.
             field: Field to return. Has to be included in data_stored.
             dim1_cut: Interval along the 1st axis that should be
               included. If None the whole axis is included. For (a, b)
@@ -162,6 +167,9 @@ class UniversalSingle(GenericList):
         Returns: Chunk of data
         """
 
+        if self.iteration is None:
+            raise AssertionError("open_iteration has to be called first")
+
         field = field.strip()
         if field not in self.data_stored:
             raise ValueError("This instance is not set to store this"
@@ -174,7 +182,7 @@ class UniversalSingle(GenericList):
         if dim3_cut is None and self.data_dim == 3:
             dim3_cut = (0, self.sim_box_shape[2])
 
-        data = self.export_func(self.full_path(iteration), iteration)
+        data = self.export_func(self.full_path(self.iteration), self.iteration)
 
         if self.sim_box_shape != data.shape:
             raise ValueError('Shape of the opened array is different than the '

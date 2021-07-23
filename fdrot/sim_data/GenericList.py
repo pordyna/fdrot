@@ -54,6 +54,7 @@ class GenericList:
             self.axis_map[axis] = idx
         if self.data_dim not in [2, 3]:
             raise ValueError("Data has to be either in 2D or 3D.")
+        self.iteration = None
 
     @property
     def data_dim(self) -> int:
@@ -80,7 +81,13 @@ class GenericList:
                  'continuing.')
         self._ids = u_sorted
 
-    def open(self, iteration: int, field: str,
+    def open_iteration(self, iteration: int):
+        raise NotImplementedError
+
+    def close_iteration(self):
+        raise NotImplementedError
+
+    def open(self, field: str,
              dim1_cut: Optional[Tuple[int, int]] = None,
              dim2_cut: Optional[Tuple[int, int]] = None,
              dim3_cut: Optional[Tuple[int, int]] = None):  # -> np.ndarray
@@ -89,7 +96,6 @@ class GenericList:
         To obtain only a specific chunk of data set dimension cuts.
 
         Args:
-            iteration: iteration from which the data should be loaded.
             field: Field to return. Has to be included in data_stored.
             dim1_cut: Interval along the 1st axis that should be
               included. If None the whole axis is included. For (a, b)

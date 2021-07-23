@@ -72,14 +72,14 @@ class OpenPMDList(GenericList):
         super().__init__(single_time_step, ids, grid, sim_box_shape,
                          data_stored, axis_order=axis_order)
 
-    def _get_mesh_record(self, iteration: int, field: str) -> openpmd_api.Mesh:
-        """Returns a mesh object for a specific iteration and field."""
-        mesh = self.series.iterations[iteration].meshes
-        for key in self.fields_mapping[field]:
-            mesh = mesh[key]
-        return mesh
+    def open_iterations(self, iteration: int):
+        self.iteration = self.series.iterations[iteration]
 
-    def open(self, iteration: int, field: str,
+    def close_iteration(self):
+        self.iteration.close()
+        self.iteration = None
+
+    def open(self, field: str,
              dim1_cut: Optional[Tuple[int, int]] = None,
              dim2_cut: Optional[Tuple[int, int]] = None,
              dim3_cut: Optional[Tuple[int, int]] = None) -> np.ndarray:
@@ -88,7 +88,6 @@ class OpenPMDList(GenericList):
         To obtain only a specific chunk of data set dimension cuts.
 
         Args:
-            iteration: iteration from which the data should be loaded.
             field: Field to return. Has to be included in data_stored.
             dim1_cut: Interval along the 1st axis that should be
               included. If None the whole axis is included. For (a, b)
@@ -103,6 +102,9 @@ class OpenPMDList(GenericList):
         Returns: Chunk of data
         """
 
+        if self.iteration is None:
+            raise AssertionError("open_iteration has to be called first")
+
         field = field.strip()
         if field not in self.data_stored:
             raise ValueError("This instance is not set to store this"
@@ -115,7 +117,8 @@ class OpenPMDList(GenericList):
         if dim3_cut is None and self.data_dim == 3:
             dim3_cut = (0, self.sim_box_shape[2])
 
-        data_mesh = self._get_mesh_record(iteration, field)
+        data_mesh = self.iteration.meshes[self.fields_mapping[field]]
+
         if self.data_dim == 3:
             offset = [dim1_cut[0], dim2_cut[0], dim3_cut[0]]
             extent = (dim1_cut[1] - dim1_cut[0],
