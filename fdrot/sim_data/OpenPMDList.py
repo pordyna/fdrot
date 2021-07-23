@@ -49,9 +49,10 @@ class OpenPMDList(GenericList):
             self.fields_mapping = {'Bx': ('B', 'x'), 'By': ('B', 'y'),
                                    'Bz': ('B', 'z'), 'n_e': ('e_density',
                                                              '\x0bScalar')}
-        else: self.fields_mapping = fields_mapping
+        else:
+            self.fields_mapping = fields_mapping
         self.series = series
-        ids = list(series.iterations) # this is a bit tricky
+        ids = list(series.iterations)  # this is a bit tricky
 
         # Obtaining the parameters from the series. It's assumed that, they
         # stay the same, for the whole series.
@@ -62,13 +63,13 @@ class OpenPMDList(GenericList):
             single_time_step = (series.iterations[ids[0]].dt
                                 * series.iterations[ids[0]].time_unit_SI)
         if sim_box_shape is None:
-            sim_box_shape = tuple(self._get_mesh_record(ids[0],
-                                                        data_stored[0]).shape)
+            sim_box_shape = tuple(self.series.iterations[ids[0]].meshes[self.fields_mapping[data_stored[0]]].shape)
         if grid is None:
             key = self.fields_mapping[data_stored[0]][0]
             unit = series.iterations[ids[0]].meshes[key].grid_unit_SI
             spacing = series.iterations[ids[0]].meshes[key].grid_spacing
             grid = tuple(unit * np.asarray(spacing))
+        series.iterations[ids[0]].close()
         super().__init__(single_time_step, ids, grid, sim_box_shape,
                          data_stored, axis_order=axis_order)
 
