@@ -416,6 +416,7 @@ class SimSequence:
 
         # Begin calculation:
         for step in range(self.number_of_steps):
+            print(f"starting to process step {step}")
             # TODO add chunks.
             data_b = self.get_data(b_field_component, step,
                                    transform=transform, make_contiguous=True,
