@@ -47,11 +47,10 @@ def _switch_axis(array: np.ndarray, current_order: AxisOrder,
 
 def _default_energy_to_alpha(energy: np.ndarray) -> np.ndarray:
     # alpha is 1/gamma^2
-    return 1 / (energy / electron_mass / speed_of_light**2 + 1)**2
+    return 1 / (energy / electron_mass / speed_of_light ** 2 + 1) ** 2
 
 
 class SimSequence:
-
     """Provides tools for FR calculation over a time steps sequence.
 
     It stores the sequence of time steps and the intervals passed by
@@ -179,7 +178,7 @@ class SimSequence:
             print(missing)
         return ok
 
-    def get_data(self, field: str, step: int,
+    def get_data(self, field: str,
                  transform: Optional[Callable[[np.ndarray],
                                               np.ndarray]] = None,
                  make_contiguous: bool = True,
@@ -191,8 +190,6 @@ class SimSequence:
         Args:
             field: Field for which the data should be returned (e.g)
               'Bz' or 'n_e'.
-            step: Step in the sequence for which the data should be
-              returned.
             transform: Set this to transform the data in any way before
               a contiguity check is performed. Use it for any
               transformation that could change contiguity.
@@ -207,14 +204,13 @@ class SimSequence:
               axis won't be cut.
          """
 
-        data = self.get_files(field).open(self.step_to_iter(step), field,
-                                          *dim_cut)
+        data = self.get_files(field).open(field, *dim_cut)
         if cast_to is not None:
             if data.dtype < cast_to:
                 data = data.astype(cast_to)
             if data.dtype > cast_to:
-                raise TypeError("Data for the iteration {} can't be safely"
-                                "cast to the desired type.".format(step))
+                raise TypeError("Data  can't be safely"
+                                "cast to the desired type.")
         if transform is not None:
             data = transform(data)
 
@@ -316,9 +312,9 @@ class SimSequence:
         factor = self.integration_factor(wavelength)
 
         # start the Kernel:
-        Bz = self.get_data('Bz', 0, cast_to=np.dtype('float64'),
+        Bz = self.get_data('Bz', cast_to=np.dtype('float64'),
                            transform=transform, dim_cut=dim_cut)
-        ne = self.get_data('n_e', 0, cast_to=np.dtype('float64'),
+        ne = self.get_data('n_e', cast_to=np.dtype('float64'),
                            transform=transform, dim_cut=dim_cut)
         step_data = Bz * ne
         kernel = Kernel2D(step_data, output, pulse, factor, self.global_start,
@@ -329,9 +325,9 @@ class SimSequence:
         kernel.propagate_step(self.slices[0][0], self.slices[0][1])
         # do the other steps:
         for step in range(1, self.number_of_steps):
-            step_data = (self.get_data('Bz', step, cast_to=np.dtype('float64'),
+            step_data = (self.get_data('Bz', cast_to=np.dtype('float64'),
                                        transform=transform, dim_cut=dim_cut)
-                         * self.get_data('n_e', step,
+                         * self.get_data('n_e',
                                          cast_to=np.dtype('float64'),
                                          transform=transform, dim_cut=dim_cut))
             step_interval = self.slices[step]
@@ -434,17 +430,17 @@ class SimSequence:
             self.open_iteration(self.step_to_iter(step))
 
             # TODO add chunks.
-            data_b = self.get_data(b_field_component, step,
+            data_b = self.get_data(b_field_component,
                                    transform=transform, make_contiguous=True,
                                    dim_cut=dim_cut, cast_to=np.dtype('float64'))
-            data_n = self.get_data('n_e', step, transform=transform,
+            data_n = self.get_data('n_e', transform=transform,
                                    make_contiguous=True, dim_cut=dim_cut, cast_to=np.dtype('float64'))
 
             data = numba_multiply_arrays(data_b, data_n)
             del data_b
             del data_n
             if include_relativistic_correction:
-                data_energy_density = self.get_data('energy_density', step, transform=transform,
+                data_energy_density = self.get_data('energy_density', transform=transform,
                                                     make_contiguous=True, dim_cut=dim_cut, cast_to=np.dtype('float64'))
                 cell_size = self.get_files('energy_density').grid
                 cell_volume = cell_size[0] * cell_size[1] * cell_size[2]
