@@ -76,7 +76,7 @@ class OpenPMDList(GenericList):
 
     def _get_mesh_record(self, iteration: openpmd_api.Iteration, field: str) -> openpmd_api.Mesh:
         """Returns a mesh object for a specific iteration and field."""
-        mesh = self.series.iterations[iteration].meshes
+        mesh = iteration.meshes
         for key in self.fields_mapping[field]:
             mesh = mesh[key]
         return mesh
