@@ -528,7 +528,7 @@ class SimSequence:
 
         mrc: openpmd_api.Mesh_Record_Component = mesh[openpmd_api.Mesh_Record_Component.SCALAR]
         dataset = openpmd_api.Dataset(output_flat.dtype, output_flat.shape)
-        mrc.reset_datatype(dataset)
+        mrc.reset_dataset(dataset)
         mrc.set_unit_SI(1.0)
         offset = [0, 0]
         if chunk_axis is not None:
