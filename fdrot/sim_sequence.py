@@ -10,9 +10,16 @@ from functools import partial
 import math
 
 import numpy as np
+import openpmd_api
 from scipy.constants import (electron_mass, speed_of_light,
                              elementary_charge, epsilon_0)
-from numba import njit
+
+try:
+    from mpi4py import MPI
+
+    HAVE_MPI = True
+except ImportError:
+    HAVE_MPI = False
 
 from .sim_data import GenericList
 from . import spliters
@@ -337,12 +344,15 @@ class SimSequence:
 
     def rotation_3d_perp(self, pulse, wavelength: float,
                          second_axis_output: str,
+                         output_series_path: str,
+                         output_series_config: Optional[str] = "",
                          global_cut_output_first: Optional[
                              Tuple[int, int]] = None,
                          global_cut_output_second: Optional[
                              Tuple[int, int]] = None,
                          include_relativistic_correction: Optional[bool] = False,
-                         mean_energy_to_alpha: Optional[Callable[[np.ndarray], np.ndarray]] = None) -> np.ndarray:
+                         mean_energy_to_alpha: Optional[Callable[[np.ndarray], np.ndarray]] = None,
+                         chunk_axis: Optional[str] = None, chunk: Optional[Tuple[int, int]] = None) -> None:
         """Propagates the pulse and calculates faraday rotation (in 3D).
 
         The effect is integrated over the pulse.
@@ -421,8 +431,41 @@ class SimSequence:
             output_dim_1 = (dim_cut[output_second_idx][1]
                             - dim_cut[output_second_idx][0])
 
+        output_dim = [output_dim_0, output_dim_1]
+        # parallel:
+        if chunk_axis is not None:
+            if not HAVE_MPI:
+                raise ImportError("chunk_axis was set (not None) but couldn't import mpi4py. ")
+
+            chunk_axis_idx = self.axis_map[chunk_axis]
+            if chunk_axis_idx == output_first_idx:
+                cells_along_chunk_axis = output_dim_0
+                chunk_output_idx = 0
+            elif chunk_axis_idx == output_second_idx:
+                cells_along_chunk_axis = output_dim_1
+                chunk_output_idx = 1
+            else:
+                raise ValueError("Chunk axis can't be the propagation axis.")
+
+            cells_per_rank = int(cells_along_chunk_axis / MPI.COMM_WORLD.size)
+            extra_cells = cells_along_chunk_axis % MPI.COMM_WORLD.size
+            if cells_per_rank < 1:
+                raise ValueError("More mpi ranks than cells to chunk.")
+            rank = MPI.COMM_WORLD.rank
+            cells_on_this_rank = cells_per_rank
+            cells_on_this_rank += 1 if rank < extra_cells else 0
+            chunk_start = rank * cells_per_rank + min(rank, extra_cells)
+            chunk_end = chunk_start + cells_on_this_rank
+
+            global_start_chunk_axis = dim_cut[chunk_axis_idx][0]
+            if global_start_chunk_axis is None:
+                global_start_chunk_axis = 0
+            dim_cut[chunk_axis_idx] = (global_start_chunk_axis + chunk_start, chunk_end)
+            output_dim[chunk_output_idx] = cells_on_this_rank
+            output_chunk_start = chunk_start
+
         # Create output:
-        output = np.zeros((pulse.size, output_dim_0, output_dim_1), dtype=np.float64)
+        output = np.zeros((pulse.size, *output_dim), dtype=np.float64)
 
         # Begin calculation:
         for step in range(self.number_of_steps):
@@ -461,7 +504,39 @@ class SimSequence:
         output *= self.integration_factor(wavelength)
         output_flat = np.zeros((output_dim_0, output_dim_1), dtype=np.float64)
         average_over_pulse(output, output_flat)
-        return output_flat
+
+        # Write output with the openPMD API
+        if HAVE_MPI:
+            output_series: openpmd_api.Series = openpmd_api.Series(output_series_path,
+                                                                   openpmd_api.Access.create,
+                                                                   MPI.COMM_WORLD,
+                                                                   output_series_config)
+        else:
+            output_series: openpmd_api.Series = openpmd_api.Series(output_series_path,
+                                                                   openpmd_api.Access.create,
+                                                                   output_series_config)
+        output_series.set_software("fdrot")
+        iteration: openpmd_api.Iteration = output_series.iterations[0]
+
+        mesh: openpmd_api.Mesh = iteration.meshes['rotation_map']
+        cell_size = self.get_files('n_e').grid
+        unit_grid = cell_size[0]
+        mesh.set_grid_spacing([cell_size[output_first_idx] / unit_grid, cell_size[output_second_idx] / unit_grid])
+        mesh.set_grid_global_offset([0, 0])
+        mesh.set_grid_unit_SI(unit_grid)
+        mesh.set_axis_labels(last_axis, second_axis_output)
+
+        mrc: openpmd_api.Mesh_Record_Component = mesh[openpmd_api.Mesh_Record_Component.SCALAR]
+        dataset = openpmd_api.Dataset(output_flat.dtype, output_flat.shape)
+        mrc.reset_datatype(dataset)
+        mrc.set_unit_SI(1.0)
+        offset = [0, 0]
+        if chunk_axis is not None:
+            offset[chunk_output_idx] = output_chunk_start
+        mrc.store_chunk(output_flat, offset, output_flat.shape)
+        iteration.close()
+        output_series.flush()
+        del output_series
 
 
 def _get_params_and_check(files: GenericList, propagation_axis: str,
