@@ -524,7 +524,7 @@ class SimSequence:
         mesh.set_grid_spacing([cell_size[output_first_idx] / unit_grid, cell_size[output_second_idx] / unit_grid])
         mesh.set_grid_global_offset([0, 0])
         mesh.set_grid_unit_SI(unit_grid)
-        mesh.set_axis_labels(last_axis, second_axis_output)
+        mesh.set_axis_labels([last_axis, second_axis_output])
 
         mrc: openpmd_api.Mesh_Record_Component = mesh[openpmd_api.Mesh_Record_Component.SCALAR]
         dataset = openpmd_api.Dataset(output_flat.dtype, output_flat.shape)
