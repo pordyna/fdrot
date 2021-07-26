@@ -505,7 +505,7 @@ class SimSequence:
             kernel3d(pulse, data, output, local_start, local_end,
                      step_start, step_stop)
         output *= self.integration_factor(wavelength)
-        output_flat = np.zeros((output_dim_0, output_dim_1), dtype=np.float64)
+        output_flat = np.zeros(output_dim, dtype=np.float64)
         average_over_pulse(output, output_flat)
 
         # Write output with the openPMD API
