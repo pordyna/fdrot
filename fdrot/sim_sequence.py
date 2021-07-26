@@ -457,9 +457,12 @@ class SimSequence:
             chunk_start = rank * cells_per_rank + min(rank, extra_cells)
             chunk_end = chunk_start + cells_on_this_rank
 
-            global_start_chunk_axis = dim_cut[chunk_axis_idx][0]
-            if global_start_chunk_axis is None:
+            if dim_cut[chunk_axis_idx] is None:
                 global_start_chunk_axis = 0
+            else:
+                global_start_chunk_axis = dim_cut[chunk_axis_idx][0]
+                if global_start_chunk_axis is None:
+                    global_start_chunk_axis = 0
             dim_cut[chunk_axis_idx] = (global_start_chunk_axis + chunk_start, chunk_end)
             output_dim[chunk_output_idx] = cells_on_this_rank
             output_chunk_start = chunk_start
