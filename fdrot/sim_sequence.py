@@ -448,11 +448,7 @@ class SimSequence:
                 if mean_energy_to_alpha is None:
                     mean_energy_to_alpha = _default_energy_to_alpha
 
-                @njit(parallel=True)
-                def numba_mean_energy_to_alpha(array):
-                    return mean_energy_to_alpha(array)
-
-                data = numba_multiply_arrays(numba_mean_energy_to_alpha(mean_energy), data)
+                data = numba_multiply_arrays(mean_energy_to_alpha(mean_energy), data)
             self.close_iteration()
             step_interval = self.slices[step]
             local_start = 0
