@@ -530,7 +530,8 @@ class SimSequence:
         mesh.set_axis_labels([last_axis, second_axis_output])
 
         mrc: openpmd_api.Mesh_Record_Component = mesh[openpmd_api.Mesh_Record_Component.SCALAR]
-        dataset = openpmd_api.Dataset(output_flat.dtype, output_flat.shape)
+        dataset = openpmd_api.Dataset(output_flat.dtype, [self.sim_box_shape[output_first_idx],
+                                                          self.sim_box_shape[output_second_idx]])
         mrc.reset_dataset(dataset)
         mrc.set_unit_SI(1.0)
         offset = [0, 0]
