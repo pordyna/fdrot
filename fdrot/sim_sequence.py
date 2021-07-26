@@ -345,7 +345,7 @@ class SimSequence:
     def rotation_3d_perp(self, pulse, wavelength: float,
                          second_axis_output: str,
                          output_series_path: str,
-                         output_series_config: Optional[str] = "",
+                         output_series_config: Optional[str] = "{}",
                          global_cut_output_first: Optional[
                              Tuple[int, int]] = None,
                          global_cut_output_second: Optional[
