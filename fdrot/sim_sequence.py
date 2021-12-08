@@ -25,7 +25,6 @@ from .sim_data import GenericList
 from . import spliters
 from .Kernel2D import Kernel2D
 from .kernel3d import kernel3d
-from .parallel_helpers import numba_multiply_arrays, average_over_pulse
 
 """
 This module is a part of the fdrot package.
@@ -55,6 +54,13 @@ def _switch_axis(array: np.ndarray, current_order: AxisOrder,
 def _default_energy_to_alpha(energy: np.ndarray) -> np.ndarray:
     # alpha is 1/gamma^2
     return 1 / (energy / electron_mass / speed_of_light ** 2 + 1) ** 2
+
+
+def average_over_pulse(pulse: np.ndarray, input_arr: np.ndarray, output_arr: np.ndarray) -> None:
+    input_arr[:, :, :] = np.sin(input_arr)**2
+    input_arr[:, :, :] = pulse[:, None, None] * input_arr
+    output_arr[:, :] = np.sum(input_arr, axis=0)
+    output_arr[:, :] = np.arcsin(np.sqrt(output_arr))
 
 
 class SimSequence:
@@ -482,19 +488,17 @@ class SimSequence:
             data_n = self.get_data('n_e', transform=transform,
                                    make_contiguous=True, dim_cut=dim_cut, cast_to=np.dtype('float64'))
 
-            data = numba_multiply_arrays(data_b, data_n)
+            data = data_b * data_n
             del data_b
-            del data_n
             if include_relativistic_correction:
                 data_energy_density = self.get_data('energy_density', transform=transform,
                                                     make_contiguous=True, dim_cut=dim_cut, cast_to=np.dtype('float64'))
-                cell_size = self.get_files('energy_density').grid
-                cell_volume = cell_size[0] * cell_size[1] * cell_size[2]
-                mean_energy = data_energy_density * cell_volume
+                mean_energy = data_energy_density / np.ma.masked_equal(data_n, 0.0).filled(1.0)
                 if mean_energy_to_alpha is None:
                     mean_energy_to_alpha = _default_energy_to_alpha
 
-                data = numba_multiply_arrays(mean_energy_to_alpha(mean_energy), data)
+                data = mean_energy_to_alpha(mean_energy) * data
+            del data_n
             self.close_iteration()
             step_interval = self.slices[step]
             local_start = 0
@@ -506,7 +510,7 @@ class SimSequence:
                      step_start, step_stop)
         output *= self.integration_factor(wavelength)
         output_flat = np.zeros(output_dim, dtype=np.float64)
-        average_over_pulse(output, output_flat)
+        average_over_pulse(pulse, output, output_flat)
 
         # Write output with the openPMD API
         if HAVE_MPI:

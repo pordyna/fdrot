@@ -72,13 +72,8 @@ def kernel3d(pulse: np.ndarray,
                                               global_stop - 1
         # Broadcasting arrays:
         if cut_at_head == 0:
-            cut_pulse = pulse[cut_at_tail:]
+            output[cut_at_tail:, :, :] += input_arr[pulse_tail_private:pulse_head_private + 1, :, :]
         else:
-            cut_pulse = pulse[cut_at_tail:-cut_at_head]
-        field_chunk = input_arr[pulse_tail_private:pulse_head_private + 1
-                                  :, :]  # Take all 'y' cut in 'x'.
-        # Faraday Rotation originating from the time interval [tt, tt+1].
-        # summed += ... : Shapes: (x,) * (x,y)  -> (y,) # prange reduction
-        for ii in prange(cut_pulse.shape[0]):
-            output[cut_at_tail+ii, :, :] = cut_pulse[ii] * field_chunk[ii, :, :]
+            output[cut_at_tail:-cut_at_head, :, :] += input_arr[pulse_tail_private:pulse_head_private + 1, :, :]
+
 
