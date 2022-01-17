@@ -56,11 +56,16 @@ def _default_energy_to_alpha(energy: np.ndarray) -> np.ndarray:
     return 1 / (energy / electron_mass / speed_of_light ** 2 + 1) ** 2
 
 
-def average_over_pulse(pulse: np.ndarray, input_arr: np.ndarray, output_arr: np.ndarray) -> None:
+def _old_average_over_pulse(pulse: np.ndarray, input_arr: np.ndarray, output_arr: np.ndarray) -> None:
     input_arr[:, :, :] = np.sin(input_arr)**2
     input_arr[:, :, :] = pulse[:, None, None] * input_arr
     output_arr[:, :] = np.sum(input_arr, axis=0)
     output_arr[:, :] = np.arcsin(np.sqrt(output_arr))
+
+def average_over_pulse(pulse: np.ndarray, input_arr: np.ndarray, output_arr: np.ndarray) -> None:
+    amplitude_x = np.sum(pulse[:, None, None] * np.sin(input_arr), axis=0)
+    amplitude_y = np.sum(pulse[:, None, None] * np.cos(input_arr), axis=0)
+    output_arr[:, :] = np.atan2(amplitude_x, amplitude_y)
 
 
 class SimSequence:
